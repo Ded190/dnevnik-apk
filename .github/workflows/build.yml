@@ -1,3 +1,5 @@
+name: Build APK
+
 on:
   workflow_dispatch:
   push:
@@ -8,6 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool libltdl-dev pkg-config zlib1g-dev libffi-dev libssl-dev ccache
 
       - uses: actions/setup-python@v5
         with:
