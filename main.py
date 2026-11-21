@@ -16,23 +16,23 @@ from kivy.uix.button import Button
 from kivy.uix.textinput import TextInput
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.widget import Widget
+from kivy.uix.modalview import ModalView
 from kivy.metrics import dp
 from kivy.core.window import Window
 from kivy.graphics import Color, RoundedRectangle
 from kivy.utils import get_color_from_hex
 
-# ---- палитра: тёплый, мягкий стиль ----
-C_BG = get_color_from_hex("#FBF7F1")     # кремовый фон
-C_CARD = get_color_from_hex("#FFFFFF")   # белые карточки
-C_ACCENT = get_color_from_hex("#E9734F") # терракота — расход
-C_GREEN = get_color_from_hex("#5FA46B")  # шалфей — доход
-C_TEXT = get_color_from_hex("#3D3229")
-C_MUTED = get_color_from_hex("#9A8B7A")
-C_SOFT = get_color_from_hex("#FBE9E0")   # персиковая подложка
-C_SOFTG = get_color_from_hex("#E6F0E7")  # мятная подложка
-C_CHIP = get_color_from_hex("#F3E9DE")   # неактивная категория
-C_CHSEL = get_color_from_hex("#E9734F")  # выбранная категория
-C_TRACK = get_color_from_hex("#F1E7DC")  # фон прогресс-полосы
+# ---- палитры: светлая (крем) и тёмная (кофе) ----
+THEME_LIGHT = dict(bg="#FBF7F1", card="#FFFFFF", accent="#E9734F",
+                   green="#5FA46B", text="#3D3229", muted="#9A8B7A",
+                   soft="#FBE9E0", softg="#E6F0E7", chip="#F3E9DE",
+                   chsel="#E9734F", track="#F1E7DC", field="#F7F1EA")
+THEME_DARK = dict(bg="#2A211A", card="#3A2E24", accent="#E8835F",
+                  green="#7CB88A", text="#F2E9DF", muted="#B4A390",
+                  soft="#463528", softg="#37432F", chip="#4A3B2F",
+                  chsel="#E8835F", track="#4A3B2F", field="#463829")
+
+PAL = {k: get_color_from_hex(v) for k, v in THEME_LIGHT.items()}
 
 CATS_EXPENSE = ["Еда", "Транспорт", "Дом", "Здоровье", "Связь", "Одежда", "Развлечения", "Прочее"]
 CATS_INCOME = ["Зарплата", "Подработка", "Подарок", "Прочее"]
@@ -68,10 +68,22 @@ def greeting(now=None):
     return "Доброй ночи"
 
 
+def fmt_when(r):
+    """Дата и время записи по-человечески: «21 ноября, 14:35»."""
+    try:
+        d = datetime.strptime(r["date"], "%Y-%m-%d")
+        base = f"{d.day} {MONTHS[d.month - 1]}"
+        t = r.get("time", "")
+        return f"{base}, {t}" if t else base
+    except (ValueError, TypeError, KeyError):
+        return str(r.get("date", ""))
+
+
 class Card(BoxLayout):
     """Карточка со скруглёнными углами."""
-    def __init__(self, bg=C_CARD, radius=dp(20), **kw):
+    def __init__(self, bg=None, radius=dp(20), **kw):
         super().__init__(**kw)
+        bg = bg if bg is not None else PAL["card"]
         with self.canvas.before:
             Color(*bg)
             self._bg = RoundedRectangle(pos=self.pos, size=self.size,
@@ -85,15 +97,15 @@ class Card(BoxLayout):
 
 class SoftButton(Button):
     """Кнопка-пилюля со скруглёнными углами и мягким нажатием."""
-    def __init__(self, bg=C_ACCENT, radius=dp(24), **kw):
+    def __init__(self, bg=None, radius=dp(24), **kw):
         kw.setdefault("background_normal", "")
         kw.setdefault("background_down", "")
         super().__init__(**kw)
         self.background_color = (0, 0, 0, 0)   # рисуем сами
-        self._bg = bg
+        self._bg = bg if bg is not None else PAL["accent"]
         self._radius = radius
         with self.canvas.before:
-            self._col = Color(*bg)
+            self._col = Color(*self._bg)
             self._rect = RoundedRectangle(pos=self.pos, size=self.size,
                                           radius=[radius])
         self.bind(pos=self._upd, size=self._upd)
@@ -116,15 +128,15 @@ class SoftButton(Button):
 
 class GoalBar(Widget):
     """Прогресс-полоса цели."""
-    def __init__(self, pct=0, color=C_GREEN, **kw):
+    def __init__(self, pct=0, color=None, **kw):
         super().__init__(**kw)
         self._pct = max(0, min(100, pct))
-        self._color = color
+        self._color = color if color is not None else PAL["green"]
         with self.canvas:
-            Color(*C_TRACK)
+            Color(*PAL["track"])
             self._track = RoundedRectangle(pos=self.pos, size=self.size,
                                            radius=[dp(10)])
-            Color(*color)
+            Color(*self._color)
             self._fill = RoundedRectangle(pos=self.pos, size=(0, 0),
                                           radius=[dp(10)])
         self.bind(pos=self._upd, size=self._upd)
@@ -132,24 +144,26 @@ class GoalBar(Widget):
     def _upd(self, *a):
         self._track.pos = self.pos
         self._track.size = self.size
-        self._track.radius = [min(dp(10), self.height / 2.0 if self.height else dp(10))]
+        r = min(dp(10), self.height / 2.0 if self.height else dp(10))
+        self._track.radius = [r]
         w = self.width * self._pct / 100.0
         if w < dp(2):
             self._fill.size = (0, 0)
         else:
             self._fill.pos = self.pos
             self._fill.size = (w, self.height)
-            self._fill.radius = [min(dp(10), self.height / 2.0 if self.height else dp(10))]
+            self._fill.radius = [r]
 
 
-def make_label(text, size=dp(16), color=C_TEXT, bold=False, halign="left", **kw):
-    lbl = Label(text=text, font_size=size, color=color,
+def make_label(text, size=dp(16), color=None, bold=False, halign="left", **kw):
+    lbl = Label(text=text, font_size=size,
+                color=color if color is not None else PAL["text"],
                 halign=halign, valign="middle", markup=True, **kw)
     lbl.bind(width=lambda inst, w: setattr(inst, "text_size", (w, None)))
     return lbl
 
 
-def make_btn(text, cb, bg=C_ACCENT, height=dp(52), size_hint=(1, None),
+def make_btn(text, cb, bg=None, height=dp(52), size_hint=(1, None),
              color=(1, 1, 1, 1), font_size=dp(17), size=None):
     kw = {}
     if size is not None:
@@ -159,6 +173,14 @@ def make_btn(text, cb, bg=C_ACCENT, height=dp(52), size_hint=(1, None),
                    size_hint=size_hint, height=height, **kw)
     b.bind(on_release=lambda inst: cb())
     return b
+
+
+def make_input(**kw):
+    kw.setdefault("background_color", PAL["field"])
+    kw.setdefault("foreground_color", PAL["text"])
+    kw.setdefault("hint_text_color", PAL["muted"])
+    kw.setdefault("cursor_color", PAL["accent"])
+    return TextInput(**kw)
 
 
 def spacer(h=dp(10)):
@@ -177,7 +199,7 @@ def scroll_column():
 def empty_note(text, height=dp(84)):
     card = Card(radius=dp(20), padding=dp(16),
                 size_hint=(1, None), height=height)
-    card.add_widget(make_label(text, dp(15), C_MUTED, halign="center",
+    card.add_widget(make_label(text, dp(15), PAL["muted"], halign="center",
                                size_hint=(1, 1)))
     return card
 
@@ -194,12 +216,14 @@ class DiaryApp(App):
             d = {}
         self.records = d.get("records", [])
         self.goals = d.get("goals", {})
+        self.theme = d.get("theme", "light")
 
     def save(self):
         path = self.data_file()
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"records": self.records, "goals": self.goals},
+            json.dump({"records": self.records, "goals": self.goals,
+                       "theme": self.theme},
                       f, ensure_ascii=False, indent=2)
         os.replace(tmp, path)
 
@@ -224,21 +248,44 @@ class DiaryApp(App):
 
     # ---------- сборка интерфейса ----------
     def build(self):
-        Window.clearcolor = C_BG
-        Window.softinput_mode = "below_target"
         self.load()
+        if self.theme == "dark":
+            global PAL
+            PAL.clear()
+            PAL.update({k: get_color_from_hex(v) for k, v in THEME_DARK.items()})
+        Window.clearcolor = PAL["bg"]
+        Window.softinput_mode = "below_target"
         self.pending_kind = "expense"
         self.sel_cat = CATS_EXPENSE[-1]
 
         sm = ScreenManager()
+        self.sm = sm
+        self.rebuild_ui()
+        return sm
+
+    def rebuild_ui(self):
+        """Пересобрать экраны (при смене темы)."""
+        self.sm.clear_widgets()
         self.home = self.make_home("home")
         self.add_scr = self.make_add("add")
         self.rep_scr = self.make_report("report")
         self.goals_scr = self.make_goals("goals")
-        for s in (self.home, self.add_scr, self.rep_scr, self.goals_scr):
-            sm.add_widget(s)
-        self.sm = sm
-        return sm
+        self.backup_scr = self.make_backup("backup")
+        for s in (self.home, self.add_scr, self.rep_scr,
+                  self.goals_scr, self.backup_scr):
+            self.sm.add_widget(s)
+        self.sm.current = "home"
+        self.refresh_home()
+
+    def switch_theme(self):
+        self.theme = "dark" if self.theme == "light" else "light"
+        global PAL
+        pal = THEME_DARK if self.theme == "dark" else THEME_LIGHT
+        PAL.clear()
+        PAL.update({k: get_color_from_hex(v) for k, v in pal.items()})
+        self.save()
+        Window.clearcolor = PAL["bg"]
+        self.rebuild_ui()
 
     def go(self, name):
         self.root.current = name
@@ -248,31 +295,41 @@ class DiaryApp(App):
         scr = Screen(name=name)
         root = BoxLayout(orientation="vertical", padding=dp(16), spacing=dp(12))
 
-        self.lbl_greet = make_label("", dp(14), C_MUTED)
+        self.lbl_greet = make_label("", dp(14), PAL["muted"])
         root.add_widget(self.lbl_greet)
 
-        card = Card(bg=C_SOFT, radius=dp(24), padding=dp(18), spacing=dp(4),
+        card = Card(bg=PAL["soft"], radius=dp(24), padding=dp(18), spacing=dp(4),
                     size_hint=(1, None), height=dp(112))
-        card.add_widget(make_label("Баланс", dp(13), C_MUTED))
-        self.lbl_balance = make_label("", dp(30), C_TEXT)
+        card.add_widget(make_label("Баланс", dp(13), PAL["muted"]))
+        self.lbl_balance = make_label("", dp(30), PAL["text"])
         card.add_widget(self.lbl_balance)
-        self.lbl_today = make_label("", dp(14), C_MUTED)
+        self.lbl_today = make_label("", dp(14), PAL["muted"])
         card.add_widget(self.lbl_today)
         root.add_widget(card)
 
         grid = GridLayout(cols=2, spacing=dp(10), size_hint=(1, None),
                           height=dp(54) * 2 + dp(10))
         grid.add_widget(make_btn("+ Расход", lambda: self.open_add("expense"),
-                                 C_ACCENT, dp(54)))
+                                 PAL["accent"], dp(54)))
         grid.add_widget(make_btn("+ Доход", lambda: self.open_add("income"),
-                                 C_GREEN, dp(54)))
+                                 PAL["green"], dp(54)))
         grid.add_widget(make_btn("Отчёты", lambda: self.go("report"),
-                                 C_CHIP, dp(54), color=C_TEXT))
+                                 PAL["chip"], dp(54), color=PAL["text"]))
         grid.add_widget(make_btn("Цели", lambda: self.go("goals"),
-                                 C_CHIP, dp(54), color=C_TEXT))
+                                 PAL["chip"], dp(54), color=PAL["text"]))
         root.add_widget(grid)
 
-        root.add_widget(make_label("Последние записи", dp(15), C_MUTED))
+        row = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(10))
+        row.add_widget(make_btn("Копия данных", lambda: self.go("backup"),
+                                PAL["chip"], dp(44), color=PAL["text"],
+                                font_size=dp(14)))
+        self.btn_theme = make_btn("Тема: светлая", self.switch_theme,
+                                  PAL["chip"], dp(44), color=PAL["text"],
+                                  font_size=dp(14))
+        row.add_widget(self.btn_theme)
+        root.add_widget(row)
+
+        root.add_widget(make_label("Последние записи", dp(15), PAL["muted"]))
         self.home_scroll, self.home_grid = scroll_column()
         root.add_widget(self.home_scroll)
 
@@ -292,26 +349,67 @@ class DiaryApp(App):
         self.lbl_today.text = (f"Расходов сегодня: {rub(t_exp)}   "
                                f"Записей: {len(self.records)}")
 
+        if getattr(self, "btn_theme", None) is not None:
+            self.btn_theme.text = ("Тема: тёмная" if self.theme == "dark"
+                                   else "Тема: светлая")
+
         self.home_grid.clear_widgets()
         if not self.records:
             self.home_grid.add_widget(empty_note(
                 "Пока тихо.\nНажмите «+ Расход» или «+ Доход».\nКаждая запись — шаг к цели."))
             return
-        for r in reversed(self.records[-12:]):
+        visible = self.records[-12:]
+        offset = len(self.records) - len(visible)
+        for i, r in enumerate(reversed(visible)):
+            idx = len(self.records) - 1 - i
             sign = "−" if r["kind"] == "expense" else "+"
-            col = C_ACCENT if r["kind"] == "expense" else C_GREEN
+            col = PAL["accent"] if r["kind"] == "expense" else PAL["green"]
             cmt = f' · {r["comment"]}' if r.get("comment") else ""
             card = Card(radius=dp(16), padding=dp(12), spacing=dp(2),
-                        size_hint=(1, None), height=dp(68))
-            row = BoxLayout()
+                        size_hint=(1, None), height=dp(78))
+            row = BoxLayout(size_hint=(1, None), height=dp(34), spacing=dp(4))
             row.add_widget(make_label(f"[b]{sign}{rub(r['amount'])}[/b]",
-                                      dp(17), col, size_hint=(0.5, 1)))
-            row.add_widget(make_label(r["category"], dp(14), C_MUTED,
-                                      halign="right", size_hint=(0.5, 1)))
+                                      dp(17), col, size_hint=(0.42, 1)))
+            row.add_widget(make_label(r["category"], dp(14), PAL["muted"],
+                                      halign="right", size_hint=(0.44, 1)))
+            row.add_widget(make_btn("×", lambda ii=idx: self.confirm_delete(ii),
+                                    PAL["chip"], dp(40),
+                                    size_hint=(None, 1),
+                                    size=(dp(40), dp(40)),
+                                    color=PAL["accent"], font_size=dp(16)))
             card.add_widget(row)
-            card.add_widget(make_label(f'{r["date"]} {r.get("time", "")}{cmt}',
-                                       dp(13), C_MUTED))
+            card.add_widget(make_label(f"{fmt_when(r)}{cmt}",
+                                       dp(13), PAL["muted"]))
             self.home_grid.add_widget(card)
+
+    def confirm_delete(self, idx):
+        if not (0 <= idx < len(self.records)):
+            return
+        r = self.records[idx]
+        view = ModalView(size_hint=(0.85, None), height=dp(170),
+                         background="", background_color=(0, 0, 0, 0),
+                         auto_dismiss=True)
+        card = Card(radius=dp(20), padding=dp(16), spacing=dp(10),
+                    orientation="vertical")
+        card.add_widget(make_label("[b]Удалить запись?[/b]", dp(17),
+                                   PAL["text"], halign="center"))
+        card.add_widget(make_label(f"{fmt_when(r)} · {r['category']} · {rub(r['amount'])}",
+                                   dp(14), PAL["muted"], halign="center"))
+        row = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(8))
+        row.add_widget(make_btn("Оставить", view.dismiss, PAL["chip"], dp(44),
+                                color=PAL["text"], font_size=dp(15)))
+        row.add_widget(make_btn("Удалить", lambda: self.do_delete(idx, view),
+                                PAL["accent"], dp(44), font_size=dp(15)))
+        card.add_widget(row)
+        view.add_widget(card)
+        view.open()
+
+    def do_delete(self, idx, view):
+        if 0 <= idx < len(self.records):
+            self.records.pop(idx)
+            self.save()
+            self.refresh_home()
+        view.dismiss()
 
     # ---------- ЭКРАН ДОБАВЛЕНИЯ ----------
     def open_add(self, kind):
@@ -329,33 +427,52 @@ class DiaryApp(App):
 
         top = BoxLayout(size_hint=(1, None), height=dp(52), spacing=dp(10))
         top.add_widget(make_btn("←", lambda: self.go("home"),
-                                C_CHIP, dp(52), size_hint=(None, 1),
-                                color=C_TEXT))
+                                PAL["chip"], dp(52), size_hint=(None, 1),
+                                color=PAL["text"]))
         self.add_title = make_label("[b]Новый расход[/b]", dp(22))
         top.add_widget(self.add_title)
         root.add_widget(top)
 
-        self.amount_input = TextInput(font_size=dp(26), multiline=False,
-                                      input_filter="float", size_hint=(1, None),
-                                      height=dp(60), hint_text="Сумма")
+        self.amount_input = make_input(font_size=dp(26), multiline=False,
+                                       input_filter="float",
+                                       size_hint=(1, None), height=dp(60),
+                                       hint_text="Сумма")
         root.add_widget(self.amount_input)
 
-        root.add_widget(make_label("Категория", dp(14), C_MUTED))
+        qrow = BoxLayout(size_hint=(1, None), height=dp(42), spacing=dp(8))
+        for t, v in [("+100", 100), ("+500", 500), ("+1000", 1000), ("Сброс", None)]:
+            qrow.add_widget(make_btn(t, lambda vv=v: self.quick_sum(vv),
+                                     PAL["chip"], dp(42), color=PAL["text"],
+                                     font_size=dp(14)))
+        root.add_widget(qrow)
+
+        root.add_widget(make_label("Категория", dp(14), PAL["muted"]))
         self.cats_grid = GridLayout(cols=4, spacing=dp(8), size_hint=(1, None))
         self.cats_grid.bind(minimum_height=self.cats_grid.setter("height"))
         root.add_widget(self.cats_grid)
 
-        self.comment_input = TextInput(font_size=dp(17), multiline=False,
-                                       size_hint=(1, None), height=dp(48),
-                                       hint_text="Комментарий (можно пусто)")
+        self.comment_input = make_input(font_size=dp(17), multiline=False,
+                                        size_hint=(1, None), height=dp(48),
+                                        hint_text="Комментарий (можно пусто)")
         root.add_widget(self.comment_input)
 
         root.add_widget(make_btn("Сохранить", self.save_record))
-        self.add_msg = make_label("", dp(15), C_ACCENT)
+        self.add_msg = make_label("", dp(15), PAL["accent"])
         root.add_widget(self.add_msg)
 
         scr.add_widget(root)
         return scr
+
+    def quick_sum(self, add):
+        if add is None:
+            self.amount_input.text = ""
+            return
+        raw = self.amount_input.text.strip().replace(",", ".").replace(" ", "")
+        try:
+            cur = float(raw) if raw else 0.0
+        except ValueError:
+            cur = 0.0
+        self.amount_input.text = f"{cur + add:g}"
 
     def rebuild_cats(self):
         cats = CATS_EXPENSE if self.pending_kind == "expense" else CATS_INCOME
@@ -363,8 +480,9 @@ class DiaryApp(App):
             self.sel_cat = cats[-1]
         self.cats_grid.clear_widgets()
         for c in cats:
-            b = SoftButton(text=c, font_size=dp(15), bg=C_CHSEL, radius=dp(22),
-                           color=(1, 1, 1, 1) if c == self.sel_cat else C_TEXT,
+            b = SoftButton(text=c, font_size=dp(15), bg=PAL["chsel"],
+                           radius=dp(22),
+                           color=(1, 1, 1, 1) if c == self.sel_cat else PAL["text"],
                            size_hint=(1, None), height=dp(44))
             b.bind(on_release=lambda inst, cat=c: self.pick_cat(cat))
             self.cats_grid.add_widget(b)
@@ -402,15 +520,16 @@ class DiaryApp(App):
 
         top = BoxLayout(size_hint=(1, None), height=dp(52), spacing=dp(10))
         top.add_widget(make_btn("←", lambda: self.go("home"),
-                                C_CHIP, dp(52), size_hint=(None, 1),
-                                color=C_TEXT))
+                                PAL["chip"], dp(52), size_hint=(None, 1),
+                                color=PAL["text"]))
         top.add_widget(make_label("[b]Отчёты[/b]", dp(22)))
         root.add_widget(top)
 
         row = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(8))
         for t, d in [("Сегодня", 1), ("Неделя", 7), ("Месяц", 31), ("Всё", None)]:
             row.add_widget(make_btn(t, lambda dd=d: self.show_report(dd),
-                                    C_CHIP, dp(44), color=C_TEXT, font_size=dp(14)))
+                                    PAL["chip"], dp(44), color=PAL["text"],
+                                    font_size=dp(14)))
         root.add_widget(row)
 
         self.report_lbl = make_label("", dp(16))
@@ -448,8 +567,8 @@ class DiaryApp(App):
 
         top = BoxLayout(size_hint=(1, None), height=dp(52), spacing=dp(10))
         top.add_widget(make_btn("←", lambda: self.go("home"),
-                                C_CHIP, dp(52), size_hint=(None, 1),
-                                color=C_TEXT))
+                                PAL["chip"], dp(52), size_hint=(None, 1),
+                                color=PAL["text"]))
         top.add_widget(make_label("[b]Цели[/b]", dp(22)))
         root.add_widget(top)
 
@@ -458,16 +577,18 @@ class DiaryApp(App):
 
         bottom = Card(radius=dp(20), padding=dp(14), spacing=dp(8),
                       size_hint=(1, None), height=dp(150))
-        bottom.add_widget(make_label("Новая цель", dp(14), C_MUTED))
-        self.goal_name = TextInput(font_size=dp(17), multiline=False,
-                                   size_hint=(1, None), height=dp(44),
-                                   hint_text="Название (например, Отпуск)")
-        self.goal_target = TextInput(font_size=dp(17), multiline=False,
-                                     input_filter="float", size_hint=(1, None),
-                                     height=dp(44), hint_text="Нужная сумма")
+        bottom.add_widget(make_label("Новая цель", dp(14), PAL["muted"]))
+        self.goal_name = make_input(font_size=dp(17), multiline=False,
+                                    size_hint=(1, None), height=dp(44),
+                                    hint_text="Название (например, Отпуск)")
+        self.goal_target = make_input(font_size=dp(17), multiline=False,
+                                      input_filter="float",
+                                      size_hint=(1, None), height=dp(44),
+                                      hint_text="Нужная сумма")
         bottom.add_widget(self.goal_name)
         bottom.add_widget(self.goal_target)
-        bottom.add_widget(make_btn("Создать цель", self.create_goal, C_GREEN, dp(44)))
+        bottom.add_widget(make_btn("Создать цель", self.create_goal,
+                                   PAL["green"], dp(44)))
         root.add_widget(bottom)
 
         scr.add_widget(root)
@@ -490,30 +611,32 @@ class DiaryApp(App):
                         size_hint=(1, None), height=dp(168))
             row = BoxLayout(size_hint=(1, None), height=dp(30))
             row.add_widget(make_label(f"[b]{gname}[/b] · {pct:.0f}%",
-                                      dp(17), C_TEXT, size_hint=(0.7, 1)))
+                                      dp(17), PAL["text"], size_hint=(0.7, 1)))
             row.add_widget(make_label(f"{rub(saved)} из {rub(g['target'])}",
-                                      dp(13), C_MUTED, halign="right",
+                                      dp(13), PAL["muted"], halign="right",
                                       size_hint=(0.3, 1)))
             card.add_widget(row)
             card.add_widget(GoalBar(pct, size_hint=(1, None), height=dp(18)))
 
             fund_row = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(8))
-            ti = TextInput(font_size=dp(16), multiline=False, input_filter="float",
-                           size_hint=(0.6, None), height=dp(44), hint_text="Сумма")
+            ti = make_input(font_size=dp(16), multiline=False,
+                            input_filter="float", size_hint=(0.6, None),
+                            height=dp(44), hint_text="Сумма")
             fund_row.add_widget(ti)
             fund_row.add_widget(make_btn("Отложить",
                                          lambda gn=gname, t=ti: self.fund_goal(gn, t),
-                                         C_GREEN, dp(44), size_hint=(0.4, None)))
+                                         PAL["green"], dp(44),
+                                         size_hint=(0.4, None)))
             card.add_widget(fund_row)
             self.goals_grid.add_widget(card)
 
-            row_btn = BoxLayout(size_hint=(1, None), height=dp(36),
-                                halign="right", padding=[dp(0), dp(0), dp(0), dp(0)])
-            del_btn = make_btn("Убрать цель", lambda gn=gname: self.del_goal(gn),
-                               C_TRACK, dp(36), size_hint=(None, None),
-                               size=(dp(150), dp(36)), color=C_MUTED,
-                               font_size=dp(13))
-            row_btn.add_widget(del_btn)
+            row_btn = BoxLayout(size_hint=(1, None), height=dp(36))
+            row_btn.add_widget(make_btn("Убрать цель",
+                                        lambda gn=gname: self.del_goal(gn),
+                                        PAL["track"], dp(36),
+                                        size_hint=(None, None),
+                                        size=(dp(150), dp(36)),
+                                        color=PAL["muted"], font_size=dp(13)))
             self.goals_grid.add_widget(row_btn)
 
     def create_goal(self):
@@ -554,6 +677,101 @@ class DiaryApp(App):
         self.goals.pop(gname, None)
         self.save()
         self.refresh_goals()
+
+    # ---------- КОПИЯ ДАННЫХ ----------
+    def make_backup(self, name):
+        scr = Screen(name=name)
+        root = BoxLayout(orientation="vertical", padding=dp(16), spacing=dp(12))
+
+        top = BoxLayout(size_hint=(1, None), height=dp(52), spacing=dp(10))
+        top.add_widget(make_btn("←", lambda: self.go("home"),
+                                PAL["chip"], dp(52), size_hint=(None, 1),
+                                color=PAL["text"]))
+        top.add_widget(make_label("[b]Копия данных[/b]", dp(22)))
+        root.add_widget(top)
+
+        card1 = Card(radius=dp(20), padding=dp(14), spacing=dp(8),
+                     size_hint=(1, None), height=dp(150))
+        card1.add_widget(make_label("Сохранить копию", dp(15), PAL["muted"]))
+        card1.add_widget(make_label(
+            "Вся история — одним текстом. Отправьте его «в сохранённые сообщения» "
+            "или в заметки — так копия не потеряется.",
+            dp(13), PAL["muted"]))
+        card1.add_widget(make_btn("Отправить копию", self.send_backup,
+                                  PAL["green"], dp(46)))
+        root.add_widget(card1)
+
+        card2 = Card(radius=dp(20), padding=dp(14), spacing=dp(8),
+                     size_hint=(1, None), height=dp(220))
+        card2.add_widget(make_label("Восстановить из копии", dp(15), PAL["muted"]))
+        self.backup_input = make_input(font_size=dp(13), multiline=True,
+                                       size_hint=(1, None), height=dp(88),
+                                       hint_text="Вставьте текст копии сюда")
+        card2.add_widget(self.backup_input)
+        card2.add_widget(make_btn("Восстановить", self.restore_backup,
+                                  PAL["accent"], dp(46)))
+        self.backup_msg = make_label("", dp(14), PAL["accent"])
+        card2.add_widget(self.backup_msg)
+        root.add_widget(card2)
+
+        scr.add_widget(root)
+        return scr
+
+    def send_backup(self):
+        text = json.dumps({"records": self.records, "goals": self.goals,
+                           "theme": self.theme},
+                          ensure_ascii=False, indent=2)
+        ok = False
+        try:
+            from jnius import autoclass
+            Intent = autoclass("android.content.Intent")
+            JString = autoclass("java.lang.String")
+            Activity = autoclass("org.kivy.android.PythonActivity")
+            i = Intent()
+            i.setAction(Intent.ACTION_SEND)
+            i.setType("text/plain")
+            i.putExtra(Intent.EXTRA_TEXT, JString(text))
+            chooser = Intent.createChooser(i, JString("Копия дневника"))
+            Activity.mActivity.startActivity(chooser)
+            ok = True
+        except Exception:
+            pass
+        if ok:
+            self.backup_msg.text = ("Открыл выбор приложений — сохраните копию "
+                                    "в «Файлы», «Диск» или себе в мессенджер.")
+        else:
+            try:
+                path = (self.data_file() +
+                        datetime.now().strftime(".backup-%Y%m%d-%H%M%S"))
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+                self.backup_msg.text = "Копия сохранена: " + path
+            except Exception:
+                self.backup_msg.text = "Не получилось сохранить копию."
+
+    def restore_backup(self):
+        raw = self.backup_input.text.strip()
+        if not raw:
+            self.backup_msg.text = "Вставьте текст копии."
+            return
+        try:
+            d = json.loads(raw)
+            records = d.get("records", [])
+            goals = d.get("goals", {})
+            if not isinstance(records, list) or not isinstance(goals, dict):
+                raise ValueError
+            for r in records:
+                if not isinstance(r, dict) or "amount" not in r or "date" not in r:
+                    raise ValueError
+        except Exception:
+            self.backup_msg.text = "Не похоже на копию дневника. Проверьте текст."
+            return
+        self.records = records
+        self.goals = goals
+        self.save()
+        self.refresh_home()
+        self.backup_msg.text = (f"Восстановлено! Записей: {len(records)}, "
+                                f"целей: {len(goals)}.")
 
 
 if __name__ == "__main__":
