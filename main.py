@@ -19,7 +19,7 @@ from kivy.uix.widget import Widget
 from kivy.uix.modalview import ModalView
 from kivy.metrics import dp
 from kivy.core.window import Window
-from kivy.graphics import Color, RoundedRectangle
+from kivy.graphics import Color, Line, RoundedRectangle
 from kivy.utils import get_color_from_hex
 
 # ---- палитры: светлая (крем) и тёмная (кофе) ----
@@ -124,6 +124,36 @@ class SoftButton(Button):
 
     def _release(self, *a):
         self._col.rgba = self._bg
+
+
+class CrossButton(SoftButton):
+    """Кнопка-крестик: крестик нарисован линиями, а не символом шрифта."""
+    def __init__(self, cb=None, cross_color=None, **kw):
+        self._cross = (cross_color if cross_color is not None else PAL["muted"])
+        kw.setdefault("text", "")
+        super().__init__(**kw)
+        with self.canvas.after:
+            Color(*self._cross)
+            self._l1 = Line(points=[], width=dp(2), cap="round")
+            self._l2 = Line(points=[], width=dp(2), cap="round")
+        self.bind(pos=self._upd_cross, size=self._upd_cross)
+        if cb is not None:
+            self.bind(on_release=lambda inst: cb())
+
+    def _upd_cross(self, *a):
+        cx, cy = self.center_x, self.center_y
+        r = min(self.width, self.height) * 0.3
+        self._l1.points = (cx - r, cy - r, cx + r, cy + r)
+        self._l2.points = (cx - r, cy + r, cx + r, cy - r)
+
+
+def make_cross(cb, bg=None, color=None, size=dp(40), **kw):
+    kw.setdefault("size_hint", (None, None))
+    kw.setdefault("size", (size, size))
+    return CrossButton(cb=cb,
+                       bg=bg if bg is not None else PAL["chip"],
+                       cross_color=color if color is not None else PAL["muted"],
+                       radius=dp(size / 2.0), **kw)
 
 
 class GoalBar(Widget):
@@ -372,11 +402,9 @@ class DiaryApp(App):
                                       dp(17), col, size_hint=(0.42, 1)))
             row.add_widget(make_label(r["category"], dp(14), PAL["muted"],
                                       halign="right", size_hint=(0.44, 1)))
-            row.add_widget(make_btn("×", lambda ii=idx: self.confirm_delete(ii),
-                                    PAL["chip"], dp(40),
-                                    size_hint=(None, 1),
-                                    size=(dp(40), dp(40)),
-                                    color=PAL["accent"], font_size=dp(16)))
+            row.add_widget(make_cross(lambda ii=idx: self.confirm_delete(ii),
+                                      bg=PAL["chip"], color=PAL["accent"],
+                                      size=dp(40), size_hint=(None, 1)))
             card.add_widget(row)
             card.add_widget(make_label(f"{fmt_when(r)}{cmt}",
                                        dp(13), PAL["muted"]))
@@ -532,33 +560,55 @@ class DiaryApp(App):
                                     font_size=dp(14)))
         root.add_widget(row)
 
-        self.report_lbl = make_label("", dp(16))
-        root.add_widget(self.report_lbl)
+        self.report_scroll, self.report_grid = scroll_column()
+        root.add_widget(self.report_scroll)
         scr.add_widget(root)
         scr.bind(on_enter=lambda *a: self.show_report(7))
         return scr
 
     def show_report(self, days):
         recs = self.period_records(days)
-        title = {1: "Сегодня", 7: "За неделю", 31: "За месяц", None: "За всё время"}[days]
+        title = {1: "Сегодня", 7: "За неделю", 31: "За месяц",
+                 None: "За всё время"}[days]
+        self.report_grid.clear_widgets()
         if not recs:
-            self.report_lbl.text = f"[b]{title}[/b]\nЗаписей нет."
+            self.report_grid.add_widget(empty_note(f"{title}\nЗаписей нет."))
             return
         inc, exp = self.totals(recs)
-        lines = [f"[b]{title}[/b]",
-                 f"Доходы: {rub(inc)}",
-                 f"Расходы: {rub(exp)}",
-                 f"Остаток: {rub(inc - exp)}", ""]
+
+        head = Card(radius=dp(20), padding=dp(16), spacing=dp(6),
+                    size_hint=(1, None), height=dp(176))
+        head.add_widget(make_label(f"[b]{title}[/b]", dp(20)))
+        for name, val, col in [("Доходы", inc, PAL["green"]),
+                               ("Расходы", exp, PAL["accent"]),
+                               ("Остаток", inc - exp, PAL["text"])]:
+            row = BoxLayout(size_hint=(1, None), height=dp(30))
+            row.add_widget(make_label(name, dp(15), PAL["muted"],
+                                      size_hint=(0.5, 1)))
+            row.add_widget(make_label(rub(val), dp(16), col, halign="right",
+                                      size_hint=(0.5, 1)))
+            head.add_widget(row)
+        self.report_grid.add_widget(head)
+
         by_cat = {}
         for r in recs:
             if r["kind"] == "expense":
                 by_cat[r["category"]] = by_cat.get(r["category"], 0) + r["amount"]
         if by_cat:
+            self.report_grid.add_widget(make_label("Куда уходило", dp(15),
+                                                   PAL["muted"]))
             mx = max(by_cat.values())
             for cat, s in sorted(by_cat.items(), key=lambda x: -x[1]):
-                bar = "#" * max(1, int(s / mx * 14))
-                lines.append(f"{cat}: {rub(s)} {bar}")
-        self.report_lbl.text = "\n".join(lines)
+                card = Card(radius=dp(16), padding=dp(12), spacing=dp(6),
+                            size_hint=(1, None), height=dp(76))
+                top = BoxLayout(size_hint=(1, None), height=dp(26))
+                top.add_widget(make_label(cat, dp(15), size_hint=(0.6, 1)))
+                top.add_widget(make_label(rub(s), dp(15), PAL["muted"],
+                                          halign="right", size_hint=(0.4, 1)))
+                card.add_widget(top)
+                card.add_widget(GoalBar(s / mx * 100, color=PAL["accent"],
+                                        size_hint=(1, None), height=dp(10)))
+                self.report_grid.add_widget(card)
 
     # ---------- ЦЕЛИ ----------
     def make_goals(self, name):
@@ -575,20 +625,20 @@ class DiaryApp(App):
         self.goals_scroll, self.goals_grid = scroll_column()
         root.add_widget(self.goals_scroll)
 
-        bottom = Card(radius=dp(20), padding=dp(14), spacing=dp(8),
-                      size_hint=(1, None), height=dp(150))
+        bottom = Card(radius=dp(20), padding=dp(14), spacing=dp(10),
+                      size_hint=(1, None), height=dp(214))
         bottom.add_widget(make_label("Новая цель", dp(14), PAL["muted"]))
         self.goal_name = make_input(font_size=dp(17), multiline=False,
-                                    size_hint=(1, None), height=dp(44),
+                                    size_hint=(1, None), height=dp(46),
                                     hint_text="Название (например, Отпуск)")
         self.goal_target = make_input(font_size=dp(17), multiline=False,
                                       input_filter="float",
-                                      size_hint=(1, None), height=dp(44),
+                                      size_hint=(1, None), height=dp(46),
                                       hint_text="Нужная сумма")
         bottom.add_widget(self.goal_name)
         bottom.add_widget(self.goal_target)
         bottom.add_widget(make_btn("Создать цель", self.create_goal,
-                                   PAL["green"], dp(44)))
+                                   PAL["green"], dp(48)))
         root.add_widget(bottom)
 
         scr.add_widget(root)
@@ -607,37 +657,38 @@ class DiaryApp(App):
                         if r["kind"] == "income" and r.get("comment") == f"цель:{gname}")
             pct = min(100, saved / g["target"] * 100) if g["target"] else 0
 
-            card = Card(radius=dp(18), padding=dp(12), spacing=dp(8),
-                        size_hint=(1, None), height=dp(168))
-            row = BoxLayout(size_hint=(1, None), height=dp(30))
-            row.add_widget(make_label(f"[b]{gname}[/b] · {pct:.0f}%",
-                                      dp(17), PAL["text"], size_hint=(0.7, 1)))
-            row.add_widget(make_label(f"{rub(saved)} из {rub(g['target'])}",
-                                      dp(13), PAL["muted"], halign="right",
-                                      size_hint=(0.3, 1)))
-            card.add_widget(row)
-            card.add_widget(GoalBar(pct, size_hint=(1, None), height=dp(18)))
+            card = Card(radius=dp(18), padding=dp(14), spacing=dp(10),
+                        size_hint=(1, None), height=dp(196))
+            head = BoxLayout(size_hint=(1, None), height=dp(38))
+            head.add_widget(make_label(f"[b]{gname}[/b]", dp(20),
+                                       size_hint=(0.78, 1)))
+            head.add_widget(make_cross(lambda gn=gname: self.del_goal(gn),
+                                       bg=PAL["soft"], color=PAL["muted"],
+                                       size=dp(36)))
+            card.add_widget(head)
 
-            fund_row = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(8))
+            info = BoxLayout(size_hint=(1, None), height=dp(26))
+            info.add_widget(make_label(f"{rub(saved)} из {rub(g['target'])}",
+                                       dp(14), PAL["muted"],
+                                       size_hint=(0.62, 1)))
+            info.add_widget(make_label(f"[b]{pct:.0f}%[/b]", dp(16),
+                                       PAL["green"], halign="right",
+                                       size_hint=(0.38, 1)))
+            card.add_widget(info)
+            card.add_widget(GoalBar(pct, size_hint=(1, None), height=dp(12)))
+
+            fund_row = BoxLayout(size_hint=(1, None), height=dp(48), spacing=dp(8))
             ti = make_input(font_size=dp(16), multiline=False,
-                            input_filter="float", size_hint=(0.6, None),
-                            height=dp(44), hint_text="Сумма")
+                            input_filter="float", size_hint=(0.55, None),
+                            height=dp(48), hint_text="Сколько отложить")
             fund_row.add_widget(ti)
             fund_row.add_widget(make_btn("Отложить",
                                          lambda gn=gname, t=ti: self.fund_goal(gn, t),
-                                         PAL["green"], dp(44),
-                                         size_hint=(0.4, None)))
+                                         PAL["green"], dp(48),
+                                         size_hint=(0.45, None),
+                                         font_size=dp(15)))
             card.add_widget(fund_row)
             self.goals_grid.add_widget(card)
-
-            row_btn = BoxLayout(size_hint=(1, None), height=dp(36))
-            row_btn.add_widget(make_btn("Убрать цель",
-                                        lambda gn=gname: self.del_goal(gn),
-                                        PAL["track"], dp(36),
-                                        size_hint=(None, None),
-                                        size=(dp(150), dp(36)),
-                                        color=PAL["muted"], font_size=dp(13)))
-            self.goals_grid.add_widget(row_btn)
 
     def create_goal(self):
         name = self.goal_name.text.strip()
