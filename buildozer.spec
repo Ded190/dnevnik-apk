@@ -17,3 +17,6 @@ android.allow_backup = True
 [buildozer]
 log_level = 2
 warn_on_root = 1
+p4a.branch = develop
+p4a.commit = 9562d1b4f306d0af1e76991c711114010dea4152
+
