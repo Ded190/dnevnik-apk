@@ -3,6 +3,7 @@
 Дневник расходов — Android-приложение на Kivy.
 Сборка: buildozer android debug (см. buildozer.spec и .github/workflows/build.yml)
 """
+import hashlib
 import json
 import os
 from datetime import datetime
@@ -17,6 +18,7 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.widget import Widget
 from kivy.uix.modalview import ModalView
+from kivy.uix.floatlayout import FloatLayout
 from kivy.metrics import dp
 from kivy.core.window import Window
 from kivy.graphics import Color, Line, RoundedRectangle
@@ -36,6 +38,10 @@ PAL = {k: get_color_from_hex(v) for k, v in THEME_LIGHT.items()}
 
 CATS_EXPENSE = ["Еда", "Транспорт", "Дом", "Здоровье", "Связь", "Одежда", "Развлечения", "Прочее"]
 CATS_INCOME = ["Зарплата", "Подработка", "Подарок", "Прочее"]
+
+
+def all_cats(kind, custom):
+    return (CATS_EXPENSE if kind == "expense" else CATS_INCOME) + custom[kind]
 
 WEEKDAYS = ["понедельник", "вторник", "среда", "четверг",
             "пятница", "суббота", "воскресенье"]
@@ -166,7 +172,7 @@ class GoalBar(Widget):
             Color(*PAL["track"])
             self._track = RoundedRectangle(pos=self.pos, size=self.size,
                                            radius=[dp(10)])
-            Color(*self._color)
+            self._fillcol = Color(*self._color)
             self._fill = RoundedRectangle(pos=self.pos, size=(0, 0),
                                           radius=[dp(10)])
         self.bind(pos=self._upd, size=self._upd)
@@ -183,6 +189,14 @@ class GoalBar(Widget):
             self._fill.pos = self.pos
             self._fill.size = (w, self.height)
             self._fill.radius = [r]
+
+    def set_pct(self, pct):
+        self._pct = max(0, min(100, pct))
+        self._upd()
+
+    def set_color(self, color):
+        self._color = color
+        self._fillcol.rgba = color
 
 
 def make_label(text, size=dp(16), color=None, bold=False, halign="left", **kw):
@@ -247,13 +261,19 @@ class DiaryApp(App):
         self.records = d.get("records", [])
         self.goals = d.get("goals", {})
         self.theme = d.get("theme", "light")
+        self.budget = d.get("budget", None)
+        custom = d.get("custom_cats", {}) or {}
+        self.custom = {"expense": custom.get("expense", []),
+                       "income": custom.get("income", [])}
+        self.pin_hash = d.get("pin_hash", "")
 
     def save(self):
         path = self.data_file()
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"records": self.records, "goals": self.goals,
-                       "theme": self.theme},
+                       "theme": self.theme, "budget": self.budget,
+                       "custom_cats": self.custom, "pin_hash": self.pin_hash},
                       f, ensure_ascii=False, indent=2)
         os.replace(tmp, path)
 
@@ -287,6 +307,7 @@ class DiaryApp(App):
         Window.softinput_mode = "below_target"
         self.pending_kind = "expense"
         self.sel_cat = CATS_EXPENSE[-1]
+        self._must_lock = False
 
         sm = ScreenManager()
         self.sm = sm
@@ -301,8 +322,9 @@ class DiaryApp(App):
         self.rep_scr = self.make_report("report")
         self.goals_scr = self.make_goals("goals")
         self.backup_scr = self.make_backup("backup")
+        self.settings_scr = self.make_settings("settings")
         for s in (self.home, self.add_scr, self.rep_scr,
-                  self.goals_scr, self.backup_scr):
+                  self.goals_scr, self.backup_scr, self.settings_scr):
             self.sm.add_widget(s)
         self.sm.current = "home"
         self.refresh_home()
@@ -319,6 +341,204 @@ class DiaryApp(App):
 
     def go(self, name):
         self.root.current = name
+
+    # ---------- ПИН-КОД И БЛОКИРОВКА ----------
+    def on_start(self):
+        if self.pin_hash:
+            self.show_lock()
+
+    def on_pause(self):
+        self._must_lock = bool(self.pin_hash)
+        return True
+
+    def on_resume(self):
+        if self._must_lock:
+            self._must_lock = False
+            self.show_lock()
+
+    def pin_ok(self, pin):
+        return hashlib.sha256(pin.encode("utf-8")).hexdigest() == self.pin_hash
+
+    def pin_view(self, title, on_done, auto_dismiss=True):
+        view = ModalView(size_hint=(0.85, None), height=dp(210),
+                         background="", background_color=(0, 0, 0, 0),
+                         auto_dismiss=auto_dismiss)
+        card = Card(radius=dp(20), padding=dp(16), spacing=dp(10),
+                    orientation="vertical")
+        card.add_widget(make_label(f"[b]{title}[/b]", dp(17), halign="center"))
+        ti = make_input(password=True, multiline=False, input_filter="int",
+                        size_hint=(1, None), height=dp(48),
+                        hint_text="Цифры пин-кода")
+        msg = make_label("", dp(14), PAL["accent"], halign="center")
+        card.add_widget(ti)
+        card.add_widget(msg)
+        row = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(8))
+        if auto_dismiss:
+            row.add_widget(make_btn("Отмена", view.dismiss, PAL["chip"],
+                                    dp(44), color=PAL["text"], font_size=dp(15)))
+        row.add_widget(make_btn("ОК",
+                                lambda: on_done(view, ti.text.strip(), msg),
+                                PAL["accent"], dp(44), font_size=dp(15)))
+        card.add_widget(row)
+        view.add_widget(card)
+        view.open()
+
+    def show_lock(self):
+        self.pin_view("Введите пин-код", self._check_lock, auto_dismiss=False)
+
+    def _check_lock(self, view, pin, msg):
+        if self.pin_ok(pin):
+            view.dismiss()
+        else:
+            msg.text = "Неверный пин-код."
+
+    def set_pin(self):
+        if self.pin_hash:
+            self.pin_view("Введите текущий пин", self._pin_old_ok)
+        else:
+            self.pin_view("Придумайте пин-код", self._pin_new1)
+
+    def _pin_old_ok(self, view, pin, msg):
+        if self.pin_ok(pin):
+            view.dismiss()
+            self.pin_view("Новый пин-код", self._pin_new1)
+        else:
+            msg.text = "Неверный пин-код."
+
+    def _pin_new1(self, view, pin, msg):
+        if not pin:
+            msg.text = "Введите цифры пин-кода."
+            return
+        self._newpin = pin
+        view.dismiss()
+        self.pin_view("Повторите пин-код", self._pin_new2)
+
+    def _pin_new2(self, view, pin, msg):
+        if pin == self._newpin:
+            self.pin_hash = hashlib.sha256(pin.encode("utf-8")).hexdigest()
+            self.save()
+            view.dismiss()
+            self.refresh_settings()
+        else:
+            msg.text = "Не совпало. Введите первый пин заново."
+
+    def remove_pin(self):
+        if self.pin_hash:
+            self.pin_view("Отключить блокировку?\nВведите пин", self._pin_remove)
+
+    def _pin_remove(self, view, pin, msg):
+        if self.pin_ok(pin):
+            self.pin_hash = ""
+            self.save()
+            view.dismiss()
+            self.refresh_settings()
+        else:
+            msg.text = "Неверный пин-код."
+
+    # ---------- БЮДЖЕТ НА МЕСЯЦ ----------
+    def edit_budget(self):
+        view = ModalView(size_hint=(0.85, None), height=dp(210),
+                         background="", background_color=(0, 0, 0, 0),
+                         auto_dismiss=True)
+        card = Card(radius=dp(20), padding=dp(16), spacing=dp(10),
+                    orientation="vertical")
+        card.add_widget(make_label("[b]Бюджет на месяц[/b]", dp(17),
+                                   halign="center"))
+        card.add_widget(make_label("Сколько можно потратить за месяц",
+                                   dp(13), PAL["muted"], halign="center"))
+        ti = make_input(multiline=False, input_filter="float",
+                        size_hint=(1, None), height=dp(48),
+                        hint_text="Лимит, руб.")
+        if self.budget:
+            ti.text = f"{self.budget:g}"
+        card.add_widget(ti)
+        row1 = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(8))
+        row1.add_widget(make_btn("Сохранить",
+                                 lambda: self._save_budget(view, ti),
+                                 PAL["accent"], dp(44), font_size=dp(15)))
+        row1.add_widget(make_btn("Убрать лимит",
+                                 lambda: self._del_budget(view),
+                                 PAL["chip"], dp(44), color=PAL["text"],
+                                 font_size=dp(15)))
+        card.add_widget(row1)
+        view.add_widget(card)
+        view.open()
+
+    def _save_budget(self, view, ti):
+        raw = ti.text.strip().replace(",", ".").replace(" ", "")
+        try:
+            val = round(float(raw), 2)
+        except ValueError:
+            val = None
+        self.budget = val if (val and val > 0) else None
+        self.save()
+        view.dismiss()
+        self.refresh_home()
+
+    def _del_budget(self, view):
+        self.budget = None
+        self.save()
+        view.dismiss()
+        self.refresh_home()
+
+    # ---------- НАСТРОЙКИ ----------
+    def make_settings(self, name):
+        scr = Screen(name=name)
+        root = BoxLayout(orientation="vertical", padding=dp(16), spacing=dp(12))
+
+        top = BoxLayout(size_hint=(1, None), height=dp(52), spacing=dp(10))
+        top.add_widget(make_btn("←", lambda: self.go("home"),
+                                PAL["chip"], dp(52), size_hint=(None, 1),
+                                color=PAL["text"]))
+        top.add_widget(make_label("[b]Настройки[/b]", dp(22)))
+        root.add_widget(top)
+
+        c1 = Card(radius=dp(20), padding=dp(14), spacing=dp(10),
+                  size_hint=(1, None), height=dp(150))
+        c1.add_widget(make_label("[b]Тема оформления[/b]", dp(16)))
+        self.btn_theme = make_btn("Тема: светлая", self.switch_theme,
+                                  PAL["chip"], dp(46), color=PAL["text"],
+                                  font_size=dp(15))
+        c1.add_widget(self.btn_theme)
+        root.add_widget(c1)
+
+        c2 = Card(radius=dp(20), padding=dp(14), spacing=dp(10),
+                  size_hint=(1, None), height=dp(160))
+        c2.add_widget(make_label("[b]Блокировка приложения[/b]", dp(16)))
+        self.pin_status = make_label("", dp(13), PAL["muted"])
+        c2.add_widget(self.pin_status)
+        prow = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(8))
+        self.btn_pin_set = make_btn("Установить", self.set_pin, PAL["green"],
+                                    dp(44), font_size=dp(15))
+        prow.add_widget(self.btn_pin_set)
+        prow.add_widget(make_btn("Убрать пин", self.remove_pin, PAL["chip"],
+                                 dp(44), color=PAL["text"], font_size=dp(15)))
+        c2.add_widget(prow)
+        root.add_widget(c2)
+
+        c3 = Card(radius=dp(20), padding=dp(14), spacing=dp(10),
+                  size_hint=(1, None), height=dp(150))
+        c3.add_widget(make_label("[b]Копия данных[/b]", dp(16)))
+        c3.add_widget(make_label("Отправить всю историю одним текстом или "
+                                 "восстановить из копии.", dp(13), PAL["muted"]))
+        c3.add_widget(make_btn("Открыть", lambda: self.go("backup"),
+                               PAL["accent"], dp(44), font_size=dp(15)))
+        root.add_widget(c3)
+
+        scr.add_widget(root)
+        scr.bind(on_enter=lambda *a: self.refresh_settings())
+        return scr
+
+    def refresh_settings(self):
+        if getattr(self, "pin_status", None) is None:
+            return
+        self.pin_status.text = ("Включён: приложение спросит пин при запуске "
+                                "и выходе из фона." if self.pin_hash
+                                else "Не задан. Пин защищает дневник от "
+                                     "посторонних глаз.")
+        self.btn_pin_set.text = "Изменить" if self.pin_hash else "Установить"
+        self.btn_theme.text = ("Тема: тёмная" if self.theme == "dark"
+                               else "Тема: светлая")
 
     # ---------- ГЛАВНЫЙ ЭКРАН ----------
     def make_home(self, name):
@@ -337,6 +557,9 @@ class DiaryApp(App):
         card.add_widget(self.lbl_today)
         root.add_widget(card)
 
+        self.budget_holder = self.make_budget_card()
+        root.add_widget(self.budget_holder)
+
         grid = GridLayout(cols=2, spacing=dp(10), size_hint=(1, None),
                           height=dp(54) * 2 + dp(10))
         grid.add_widget(make_btn("+ Расход", lambda: self.open_add("expense"),
@@ -349,15 +572,9 @@ class DiaryApp(App):
                                  PAL["chip"], dp(54), color=PAL["text"]))
         root.add_widget(grid)
 
-        row = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(10))
-        row.add_widget(make_btn("Копия данных", lambda: self.go("backup"),
-                                PAL["chip"], dp(44), color=PAL["text"],
-                                font_size=dp(14)))
-        self.btn_theme = make_btn("Тема: светлая", self.switch_theme,
-                                  PAL["chip"], dp(44), color=PAL["text"],
-                                  font_size=dp(14))
-        row.add_widget(self.btn_theme)
-        root.add_widget(row)
+        root.add_widget(make_btn("Настройки", lambda: self.go("settings"),
+                                 PAL["chip"], dp(44), color=PAL["text"],
+                                 font_size=dp(15)))
 
         root.add_widget(make_label("Последние записи", dp(15), PAL["muted"]))
         self.home_scroll, self.home_grid = scroll_column()
@@ -367,9 +584,49 @@ class DiaryApp(App):
         scr.bind(on_enter=lambda *a: self.refresh_home())
         return scr
 
+    def make_budget_card(self):
+        holder = FloatLayout(size_hint=(1, None), height=dp(100))
+        card = Card(bg=PAL["soft"], radius=dp(20), padding=dp(14),
+                    spacing=dp(4), size_hint=(1, 1),
+                    pos_hint={"x": 0, "y": 0})
+        self.budget_lbl_big = make_label("", dp(18))
+        card.add_widget(self.budget_lbl_big)
+        self.budget_lbl_sub = make_label("", dp(13), PAL["muted"])
+        card.add_widget(self.budget_lbl_sub)
+        self.budget_bar = GoalBar(0, size_hint=(1, None), height=dp(10))
+        card.add_widget(self.budget_bar)
+        overlay = Button(background_normal="", background_down="",
+                         background_color=(0, 0, 0, 0))
+        overlay.bind(on_release=lambda inst: self.edit_budget())
+        holder.add_widget(card)
+        holder.add_widget(overlay)
+        return holder
+
     def refresh_home(self):
         now = datetime.now()
         self.lbl_greet.text = f"{greeting(now)} · {human_date(now)}"
+
+        month = now.strftime("%Y-%m")
+        m_exp = sum(r["amount"] for r in self.records
+                    if r["kind"] == "expense" and r["date"].startswith(month))
+        if self.budget:
+            left = self.budget - m_exp
+            pct = m_exp / self.budget * 100
+            self.budget_lbl_sub.text = (f"Потрачено за месяц: {rub(m_exp)} "
+                                        f"из {rub(self.budget)}")
+            if left >= 0:
+                self.budget_lbl_big.text = f"[b]Осталось: {rub(left)}[/b]"
+            else:
+                self.budget_lbl_big.text = f"[b]Перерасход: {rub(-left)}[/b]"
+            bar_col = PAL["green"] if pct < 80 else PAL["accent"]
+            self.budget_lbl_big.color = bar_col
+            self.budget_bar.set_pct(pct)
+            self.budget_bar.set_color(bar_col)
+        else:
+            self.budget_lbl_big.text = "[b]Бюджет не задан[/b]"
+            self.budget_lbl_big.color = PAL["text"]
+            self.budget_lbl_sub.text = "Нажмите, чтобы задать лимит на месяц"
+            self.budget_bar.set_pct(0)
 
         inc, exp = self.totals(self.records)
         self.lbl_balance.text = f"[b]{rub(inc - exp)}[/b]"
@@ -378,10 +635,6 @@ class DiaryApp(App):
                     if r["kind"] == "expense" and r["date"] == today)
         self.lbl_today.text = (f"Расходов сегодня: {rub(t_exp)}   "
                                f"Записей: {len(self.records)}")
-
-        if getattr(self, "btn_theme", None) is not None:
-            self.btn_theme.text = ("Тема: тёмная" if self.theme == "dark"
-                                   else "Тема: светлая")
 
         self.home_grid.clear_widgets()
         if not self.records:
@@ -503,7 +756,7 @@ class DiaryApp(App):
         self.amount_input.text = f"{cur + add:g}"
 
     def rebuild_cats(self):
-        cats = CATS_EXPENSE if self.pending_kind == "expense" else CATS_INCOME
+        cats = all_cats(self.pending_kind, self.custom)
         if self.sel_cat not in cats:
             self.sel_cat = cats[-1]
         self.cats_grid.clear_widgets()
@@ -514,6 +767,44 @@ class DiaryApp(App):
                            size_hint=(1, None), height=dp(44))
             b.bind(on_release=lambda inst, cat=c: self.pick_cat(cat))
             self.cats_grid.add_widget(b)
+        plus = SoftButton(text="+ Своя", font_size=dp(15), bg=PAL["chip"],
+                          radius=dp(22), color=PAL["muted"],
+                          size_hint=(1, None), height=dp(44))
+        plus.bind(on_release=lambda inst: self.add_cat_modal())
+        self.cats_grid.add_widget(plus)
+
+    def add_cat_modal(self):
+        view = ModalView(size_hint=(0.85, None), height=dp(170),
+                         background="", background_color=(0, 0, 0, 0),
+                         auto_dismiss=True)
+        card = Card(radius=dp(20), padding=dp(16), spacing=dp(10),
+                    orientation="vertical")
+        card.add_widget(make_label("[b]Новая категория[/b]", dp(17),
+                                   halign="center"))
+        ti = make_input(font_size=dp(16), multiline=False,
+                        size_hint=(1, None), height=dp(46),
+                        hint_text="Название категории")
+        card.add_widget(ti)
+        row = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(8))
+        row.add_widget(make_btn("Отмена", view.dismiss, PAL["chip"], dp(44),
+                                color=PAL["text"], font_size=dp(15)))
+        row.add_widget(make_btn("Добавить", lambda: self._add_cat(view, ti),
+                                PAL["green"], dp(44), font_size=dp(15)))
+        card.add_widget(row)
+        view.add_widget(card)
+        view.open()
+
+    def _add_cat(self, view, ti):
+        name = ti.text.strip()
+        if not name:
+            view.dismiss()
+            return
+        if name not in self.custom[self.pending_kind]:
+            self.custom[self.pending_kind].append(name)
+            self.save()
+        self.sel_cat = name
+        view.dismiss()
+        self.rebuild_cats()
 
     def pick_cat(self, cat):
         self.sel_cat = cat
@@ -770,7 +1061,8 @@ class DiaryApp(App):
 
     def send_backup(self):
         text = json.dumps({"records": self.records, "goals": self.goals,
-                           "theme": self.theme},
+                           "theme": self.theme, "budget": self.budget,
+                           "custom_cats": self.custom},
                           ensure_ascii=False, indent=2)
         ok = False
         try:
@@ -819,6 +1111,11 @@ class DiaryApp(App):
             return
         self.records = records
         self.goals = goals
+        if "budget" in d:
+            self.budget = d["budget"]
+        custom = d.get("custom_cats") or {}
+        self.custom = {"expense": custom.get("expense", []),
+                       "income": custom.get("income", [])}
         self.save()
         self.refresh_home()
         self.backup_msg.text = (f"Восстановлено! Записей: {len(records)}, "
