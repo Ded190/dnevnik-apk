@@ -31,7 +31,10 @@ jobs:
           pip install cython==0.29.36 buildozer
 
       - name: Build APK
-        run: yes | buildozer -v android debug > build.log 2>&1
+        run: |
+          echo "pip<26" > /tmp/pip-constraint.txt
+          export PIP_CONSTRAINT=/tmp/pip-constraint.txt
+          yes | buildozer -v android debug > build.log 2>&1
 
       - name: Show last error lines
         if: failure()
