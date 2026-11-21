@@ -15,41 +15,131 @@ from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.textinput import TextInput
 from kivy.uix.screenmanager import ScreenManager, Screen
+from kivy.uix.widget import Widget
 from kivy.metrics import dp
 from kivy.core.window import Window
 from kivy.graphics import Color, RoundedRectangle
 from kivy.utils import get_color_from_hex
 
-# ---- палитра: тёплый стиль ----
-C_BG = get_color_from_hex("#FAF6F0")
-C_CARD = get_color_from_hex("#FFFFFF")
-C_ACCENT = get_color_from_hex("#E9734F")   # расход
-C_GREEN = get_color_from_hex("#5FA46B")    # доход
+# ---- палитра: тёплый, мягкий стиль ----
+C_BG = get_color_from_hex("#FBF7F1")     # кремовый фон
+C_CARD = get_color_from_hex("#FFFFFF")   # белые карточки
+C_ACCENT = get_color_from_hex("#E9734F") # терракота — расход
+C_GREEN = get_color_from_hex("#5FA46B")  # шалфей — доход
 C_TEXT = get_color_from_hex("#3D3229")
-C_MUTED = get_color_from_hex("#8A7A6B")
-C_CHIKA = get_color_from_hex("#F3E9DE")    # неактивная категория
-C_CHSEL = get_color_from_hex("#E9734F")    # выбранная категория
+C_MUTED = get_color_from_hex("#9A8B7A")
+C_SOFT = get_color_from_hex("#FBE9E0")   # персиковая подложка
+C_SOFTG = get_color_from_hex("#E6F0E7")  # мятная подложка
+C_CHIP = get_color_from_hex("#F3E9DE")   # неактивная категория
+C_CHSEL = get_color_from_hex("#E9734F")  # выбранная категория
+C_TRACK = get_color_from_hex("#F1E7DC")  # фон прогресс-полосы
 
 CATS_EXPENSE = ["Еда", "Транспорт", "Дом", "Здоровье", "Связь", "Одежда", "Развлечения", "Прочее"]
 CATS_INCOME = ["Зарплата", "Подработка", "Подарок", "Прочее"]
+
+WEEKDAYS = ["понедельник", "вторник", "среда", "четверг",
+            "пятница", "суббота", "воскресенье"]
+MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня",
+          "июля", "августа", "сентября", "октября", "ноября", "декабря"]
 
 
 def rub(x):
     return f"{x:,.2f}".replace(",", " ") + " руб."
 
 
+def blend(color, t=0.16):
+    """Слегка осветлить цвет — эффект нажатия."""
+    return tuple(ch + (1 - ch) * t for ch in color[:3]) + (1.0,)
+
+
+def human_date(now=None):
+    now = now or datetime.now()
+    return f"{WEEKDAYS[now.weekday()]}, {now.day} {MONTHS[now.month - 1]}"
+
+
+def greeting(now=None):
+    h = (now or datetime.now()).hour
+    if 5 <= h < 12:
+        return "Доброе утро"
+    if 12 <= h < 18:
+        return "Добрый день"
+    if 18 <= h < 23:
+        return "Добрый вечер"
+    return "Доброй ночи"
+
+
 class Card(BoxLayout):
-    """Белая карточка со скруглёнными углами."""
-    def __init__(self, **kw):
+    """Карточка со скруглёнными углами."""
+    def __init__(self, bg=C_CARD, radius=dp(20), **kw):
         super().__init__(**kw)
         with self.canvas.before:
-            Color(*C_CARD)
-            self._bg = RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(14)])
+            Color(*bg)
+            self._bg = RoundedRectangle(pos=self.pos, size=self.size,
+                                        radius=[radius])
         self.bind(pos=self._upd, size=self._upd)
 
     def _upd(self, *a):
         self._bg.pos = self.pos
         self._bg.size = self.size
+
+
+class SoftButton(Button):
+    """Кнопка-пилюля со скруглёнными углами и мягким нажатием."""
+    def __init__(self, bg=C_ACCENT, radius=dp(24), **kw):
+        kw.setdefault("background_normal", "")
+        kw.setdefault("background_down", "")
+        super().__init__(**kw)
+        self.background_color = (0, 0, 0, 0)   # рисуем сами
+        self._bg = bg
+        self._radius = radius
+        with self.canvas.before:
+            self._col = Color(*bg)
+            self._rect = RoundedRectangle(pos=self.pos, size=self.size,
+                                          radius=[radius])
+        self.bind(pos=self._upd, size=self._upd)
+        self.bind(on_press=self._press, on_release=self._release)
+
+    def _upd(self, *a):
+        self._rect.pos = self.pos
+        self._rect.size = self.size
+        r = self._radius
+        if self.height:
+            r = min(r, self.height / 2.0)
+        self._rect.radius = [r]
+
+    def _press(self, *a):
+        self._col.rgba = blend(self._bg)
+
+    def _release(self, *a):
+        self._col.rgba = self._bg
+
+
+class GoalBar(Widget):
+    """Прогресс-полоса цели."""
+    def __init__(self, pct=0, color=C_GREEN, **kw):
+        super().__init__(**kw)
+        self._pct = max(0, min(100, pct))
+        self._color = color
+        with self.canvas:
+            Color(*C_TRACK)
+            self._track = RoundedRectangle(pos=self.pos, size=self.size,
+                                           radius=[dp(10)])
+            Color(*color)
+            self._fill = RoundedRectangle(pos=self.pos, size=(0, 0),
+                                          radius=[dp(10)])
+        self.bind(pos=self._upd, size=self._upd)
+
+    def _upd(self, *a):
+        self._track.pos = self.pos
+        self._track.size = self.size
+        self._track.radius = [min(dp(10), self.height / 2.0 if self.height else dp(10))]
+        w = self.width * self._pct / 100.0
+        if w < dp(2):
+            self._fill.size = (0, 0)
+        else:
+            self._fill.pos = self.pos
+            self._fill.size = (w, self.height)
+            self._fill.radius = [min(dp(10), self.height / 2.0 if self.height else dp(10))]
 
 
 def make_label(text, size=dp(16), color=C_TEXT, bold=False, halign="left", **kw):
@@ -59,9 +149,14 @@ def make_label(text, size=dp(16), color=C_TEXT, bold=False, halign="left", **kw)
     return lbl
 
 
-def make_btn(text, cb, bg=C_ACCENT, height=dp(52), size_hint=(1, None), color=(1, 1, 1, 1)):
-    b = Button(text=text, background_normal="", background_color=bg,
-               font_size=dp(18), color=color, size_hint=size_hint, height=height)
+def make_btn(text, cb, bg=C_ACCENT, height=dp(52), size_hint=(1, None),
+             color=(1, 1, 1, 1), font_size=dp(17), size=None):
+    kw = {}
+    if size is not None:
+        kw["size"] = size
+    b = SoftButton(text=text, background_color=(0, 0, 0, 0), bg=bg,
+                   radius=dp(height / 2.0), font_size=font_size, color=color,
+                   size_hint=size_hint, height=height, **kw)
     b.bind(on_release=lambda inst: cb())
     return b
 
@@ -71,12 +166,20 @@ def spacer(h=dp(10)):
 
 
 def scroll_column():
-    grid = GridLayout(cols=1, spacing=dp(10), padding=[dp(14), dp(8)],
+    grid = GridLayout(cols=1, spacing=dp(10), padding=[dp(4), dp(4)],
                       size_hint=(1, None))
     grid.bind(minimum_height=grid.setter("height"))
     sv = ScrollView()
     sv.add_widget(grid)
     return sv, grid
+
+
+def empty_note(text, height=dp(84)):
+    card = Card(radius=dp(20), padding=dp(16),
+                size_hint=(1, None), height=height)
+    card.add_widget(make_label(text, dp(15), C_MUTED, halign="center",
+                               size_hint=(1, 1)))
+    return card
 
 
 class DiaryApp(App):
@@ -143,31 +246,33 @@ class DiaryApp(App):
     # ---------- ГЛАВНЫЙ ЭКРАН ----------
     def make_home(self, name):
         scr = Screen(name=name)
-        root = BoxLayout(orientation="vertical", padding=dp(14), spacing=dp(10))
+        root = BoxLayout(orientation="vertical", padding=dp(16), spacing=dp(12))
 
-        root.add_widget(make_label("[b]Дневник расходов[/b]", dp(24)))
+        self.lbl_greet = make_label("", dp(14), C_MUTED)
+        root.add_widget(self.lbl_greet)
 
-        card = Card(orientation="vertical", padding=dp(14), spacing=dp(4),
-                    size_hint=(1, None), height=dp(118))
-        self.lbl_balance = make_label("", dp(26), C_TEXT)
-        self.lbl_today = make_label("", dp(15), C_MUTED)
+        card = Card(bg=C_SOFT, radius=dp(24), padding=dp(18), spacing=dp(4),
+                    size_hint=(1, None), height=dp(112))
+        card.add_widget(make_label("Баланс", dp(13), C_MUTED))
+        self.lbl_balance = make_label("", dp(30), C_TEXT)
         card.add_widget(self.lbl_balance)
+        self.lbl_today = make_label("", dp(14), C_MUTED)
         card.add_widget(self.lbl_today)
         root.add_widget(card)
 
-        row = BoxLayout(size_hint=(1, None), height=dp(56), spacing=dp(10))
-        row.add_widget(make_btn("+ Расход", lambda: self.open_add("expense"), C_ACCENT))
-        row.add_widget(make_btn("+ Доход", lambda: self.open_add("income"), C_GREEN))
-        root.add_widget(row)
+        grid = GridLayout(cols=2, spacing=dp(10), size_hint=(1, None),
+                          height=dp(54) * 2 + dp(10))
+        grid.add_widget(make_btn("+ Расход", lambda: self.open_add("expense"),
+                                 C_ACCENT, dp(54)))
+        grid.add_widget(make_btn("+ Доход", lambda: self.open_add("income"),
+                                 C_GREEN, dp(54)))
+        grid.add_widget(make_btn("Отчёты", lambda: self.go("report"),
+                                 C_CHIP, dp(54), color=C_TEXT))
+        grid.add_widget(make_btn("Цели", lambda: self.go("goals"),
+                                 C_CHIP, dp(54), color=C_TEXT))
+        root.add_widget(grid)
 
-        row2 = BoxLayout(size_hint=(1, None), height=dp(48), spacing=dp(10))
-        row2.add_widget(make_btn("Отчёты", lambda: self.go("report"),
-                                 get_color_from_hex("#7B6A5A")))
-        row2.add_widget(make_btn("Цели", lambda: self.go("goals"),
-                                 get_color_from_hex("#7B6A5A")))
-        root.add_widget(row2)
-
-        root.add_widget(make_label("Последние записи", dp(16), C_MUTED))
+        root.add_widget(make_label("Последние записи", dp(15), C_MUTED))
         self.home_scroll, self.home_grid = scroll_column()
         root.add_widget(self.home_scroll)
 
@@ -176,27 +281,35 @@ class DiaryApp(App):
         return scr
 
     def refresh_home(self):
+        now = datetime.now()
+        self.lbl_greet.text = f"{greeting(now)} · {human_date(now)}"
+
         inc, exp = self.totals(self.records)
-        self.lbl_balance.text = f"[b]Баланс: {rub(inc - exp)}[/b]"
-        today = datetime.now().strftime("%Y-%m-%d")
+        self.lbl_balance.text = f"[b]{rub(inc - exp)}[/b]"
+        today = now.strftime("%Y-%m-%d")
         t_exp = sum(r["amount"] for r in self.records
                     if r["kind"] == "expense" and r["date"] == today)
-        self.lbl_today.text = f"Расходов сегодня: {rub(t_exp)}   Всего записей: {len(self.records)}"
+        self.lbl_today.text = (f"Расходов сегодня: {rub(t_exp)}   "
+                               f"Записей: {len(self.records)}")
 
         self.home_grid.clear_widgets()
         if not self.records:
-            self.home_grid.add_widget(make_label("Записей пока нет.\nНажмите «+ Расход».",
-                                                 dp(16), C_MUTED))
+            self.home_grid.add_widget(empty_note(
+                "Пока тихо.\nНажмите «+ Расход» или «+ Доход».\nКаждая запись — шаг к цели."))
             return
         for r in reversed(self.records[-12:]):
             sign = "−" if r["kind"] == "expense" else "+"
             col = C_ACCENT if r["kind"] == "expense" else C_GREEN
             cmt = f' · {r["comment"]}' if r.get("comment") else ""
-            card = Card(orientation="vertical", padding=dp(10), spacing=dp(2),
-                        size_hint=(1, None), height=dp(64))
-            card.add_widget(make_label(f'{sign}{rub(r["amount"])}  {r["category"]}',
-                                       dp(17), col))
-            card.add_widget(make_label(f'{r["date"]} {r.get("time","")}{cmt}',
+            card = Card(radius=dp(16), padding=dp(12), spacing=dp(2),
+                        size_hint=(1, None), height=dp(68))
+            row = BoxLayout()
+            row.add_widget(make_label(f"[b]{sign}{rub(r['amount'])}[/b]",
+                                      dp(17), col, size_hint=(0.5, 1)))
+            row.add_widget(make_label(r["category"], dp(14), C_MUTED,
+                                      halign="right", size_hint=(0.5, 1)))
+            card.add_widget(row)
+            card.add_widget(make_label(f'{r["date"]} {r.get("time", "")}{cmt}',
                                        dp(13), C_MUTED))
             self.home_grid.add_widget(card)
 
@@ -212,11 +325,12 @@ class DiaryApp(App):
 
     def make_add(self, name):
         scr = Screen(name=name)
-        root = BoxLayout(orientation="vertical", padding=dp(14), spacing=dp(10))
+        root = BoxLayout(orientation="vertical", padding=dp(16), spacing=dp(10))
 
-        top = BoxLayout(size_hint=(1, None), height=dp(48), spacing=dp(8))
+        top = BoxLayout(size_hint=(1, None), height=dp(52), spacing=dp(10))
         top.add_widget(make_btn("←", lambda: self.go("home"),
-                                C_CHIKA, dp(48), size_hint=(None, 1), color=C_TEXT))
+                                C_CHIP, dp(52), size_hint=(None, 1),
+                                color=C_TEXT))
         self.add_title = make_label("[b]Новый расход[/b]", dp(22))
         top.add_widget(self.add_title)
         root.add_widget(top)
@@ -226,7 +340,7 @@ class DiaryApp(App):
                                       height=dp(60), hint_text="Сумма")
         root.add_widget(self.amount_input)
 
-        root.add_widget(make_label("Категория", dp(15), C_MUTED))
+        root.add_widget(make_label("Категория", dp(14), C_MUTED))
         self.cats_grid = GridLayout(cols=4, spacing=dp(8), size_hint=(1, None))
         self.cats_grid.bind(minimum_height=self.cats_grid.setter("height"))
         root.add_widget(self.cats_grid)
@@ -249,11 +363,9 @@ class DiaryApp(App):
             self.sel_cat = cats[-1]
         self.cats_grid.clear_widgets()
         for c in cats:
-            b = Button(text=c, font_size=dp(15),
-                       background_normal="",
-                       background_color=C_CHSEL if c == self.sel_cat else C_CHIKA,
-                       color=(1, 1, 1, 1) if c == self.sel_cat else C_TEXT,
-                       size_hint=(1, None), height=dp(44))
+            b = SoftButton(text=c, font_size=dp(15), bg=C_CHSEL, radius=dp(22),
+                           color=(1, 1, 1, 1) if c == self.sel_cat else C_TEXT,
+                           size_hint=(1, None), height=dp(44))
             b.bind(on_release=lambda inst, cat=c: self.pick_cat(cat))
             self.cats_grid.add_widget(b)
 
@@ -286,18 +398,19 @@ class DiaryApp(App):
     # ---------- ОТЧЁТЫ ----------
     def make_report(self, name):
         scr = Screen(name=name)
-        root = BoxLayout(orientation="vertical", padding=dp(14), spacing=dp(10))
+        root = BoxLayout(orientation="vertical", padding=dp(16), spacing=dp(12))
 
-        top = BoxLayout(size_hint=(1, None), height=dp(48), spacing=dp(8))
+        top = BoxLayout(size_hint=(1, None), height=dp(52), spacing=dp(10))
         top.add_widget(make_btn("←", lambda: self.go("home"),
-                                C_CHIKA, dp(48), size_hint=(None, 1), color=C_TEXT))
+                                C_CHIP, dp(52), size_hint=(None, 1),
+                                color=C_TEXT))
         top.add_widget(make_label("[b]Отчёты[/b]", dp(22)))
         root.add_widget(top)
 
-        row = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(6))
+        row = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(8))
         for t, d in [("Сегодня", 1), ("Неделя", 7), ("Месяц", 31), ("Всё", None)]:
             row.add_widget(make_btn(t, lambda dd=d: self.show_report(dd),
-                                    C_CHIKA, dp(44), color=C_TEXT))
+                                    C_CHIP, dp(44), color=C_TEXT, font_size=dp(14)))
         root.add_widget(row)
 
         self.report_lbl = make_label("", dp(16))
@@ -331,20 +444,21 @@ class DiaryApp(App):
     # ---------- ЦЕЛИ ----------
     def make_goals(self, name):
         scr = Screen(name=name)
-        root = BoxLayout(orientation="vertical", padding=dp(14), spacing=dp(10))
+        root = BoxLayout(orientation="vertical", padding=dp(16), spacing=dp(12))
 
-        top = BoxLayout(size_hint=(1, None), height=dp(48), spacing=dp(8))
+        top = BoxLayout(size_hint=(1, None), height=dp(52), spacing=dp(10))
         top.add_widget(make_btn("←", lambda: self.go("home"),
-                                C_CHIKA, dp(48), size_hint=(None, 1), color=C_TEXT))
+                                C_CHIP, dp(52), size_hint=(None, 1),
+                                color=C_TEXT))
         top.add_widget(make_label("[b]Цели[/b]", dp(22)))
         root.add_widget(top)
 
         self.goals_scroll, self.goals_grid = scroll_column()
         root.add_widget(self.goals_scroll)
 
-        bottom = Card(orientation="vertical", padding=dp(10), spacing=dp(8),
+        bottom = Card(radius=dp(20), padding=dp(14), spacing=dp(8),
                       size_hint=(1, None), height=dp(150))
-        bottom.add_widget(make_label("Новая цель", dp(15), C_MUTED))
+        bottom.add_widget(make_label("Новая цель", dp(14), C_MUTED))
         self.goal_name = TextInput(font_size=dp(17), multiline=False,
                                    size_hint=(1, None), height=dp(44),
                                    hint_text="Название (например, Отпуск)")
@@ -363,28 +477,44 @@ class DiaryApp(App):
     def refresh_goals(self):
         self.goals_grid.clear_widgets()
         if not self.goals:
-            self.goals_grid.add_widget(make_label("Целей пока нет.\nСоздайте первую внизу.",
-                                                  dp(16), C_MUTED))
+            self.goals_grid.add_widget(empty_note(
+                "Целей пока нет.\nСоздайте первую внизу — и откладывайте понемногу.",
+                height=dp(92)))
             return
         for gname, g in self.goals.items():
             saved = sum(r["amount"] for r in self.records
                         if r["kind"] == "income" and r.get("comment") == f"цель:{gname}")
             pct = min(100, saved / g["target"] * 100) if g["target"] else 0
-            row = BoxLayout(size_hint=(1, None), height=dp(52), spacing=dp(6))
-            row.add_widget(make_label(f"{gname}: {pct:.0f}%", dp(16),
-                                      size_hint=(0.55, 1)))
-            row.add_widget(make_label(rub(saved), dp(14), C_MUTED, size_hint=(0.25, 1)))
-            row.add_widget(make_btn("×", lambda gn=gname: self.del_goal(gn),
-                                    C_CHIKA, dp(44), size_hint=(0.1, 1), color=C_ACCENT))
-            self.goals_grid.add_widget(row)
-            fund_row = BoxLayout(size_hint=(1, None), height=dp(48), spacing=dp(6))
+
+            card = Card(radius=dp(18), padding=dp(12), spacing=dp(8),
+                        size_hint=(1, None), height=dp(168))
+            row = BoxLayout(size_hint=(1, None), height=dp(30))
+            row.add_widget(make_label(f"[b]{gname}[/b] · {pct:.0f}%",
+                                      dp(17), C_TEXT, size_hint=(0.7, 1)))
+            row.add_widget(make_label(f"{rub(saved)} из {rub(g['target'])}",
+                                      dp(13), C_MUTED, halign="right",
+                                      size_hint=(0.3, 1)))
+            card.add_widget(row)
+            card.add_widget(GoalBar(pct, size_hint=(1, None), height=dp(18)))
+
+            fund_row = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(8))
             ti = TextInput(font_size=dp(16), multiline=False, input_filter="float",
-                           size_hint=(0.6, None), height=dp(48), hint_text="Сумма")
+                           size_hint=(0.6, None), height=dp(44), hint_text="Сумма")
             fund_row.add_widget(ti)
-            fund_row.add_widget(make_btn("Отложить", lambda gn=gname, t=ti: self.fund_goal(gn, t),
+            fund_row.add_widget(make_btn("Отложить",
+                                         lambda gn=gname, t=ti: self.fund_goal(gn, t),
                                          C_GREEN, dp(44), size_hint=(0.4, None)))
-            self.goals_grid.add_widget(fund_row)
-            self.goals_grid.add_widget(spacer(dp(6)))
+            card.add_widget(fund_row)
+            self.goals_grid.add_widget(card)
+
+            row_btn = BoxLayout(size_hint=(1, None), height=dp(36),
+                                halign="right", padding=[dp(0), dp(0), dp(0), dp(0)])
+            del_btn = make_btn("Убрать цель", lambda gn=gname: self.del_goal(gn),
+                               C_TRACK, dp(36), size_hint=(None, None),
+                               size=(dp(150), dp(36)), color=C_MUTED,
+                               font_size=dp(13))
+            row_btn.add_widget(del_btn)
+            self.goals_grid.add_widget(row_btn)
 
     def create_goal(self):
         name = self.goal_name.text.strip()
