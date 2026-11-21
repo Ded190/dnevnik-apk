@@ -489,12 +489,13 @@ class DiaryApp(App):
         top = BoxLayout(size_hint=(1, None), height=dp(52), spacing=dp(10))
         top.add_widget(make_btn("←", lambda: self.go("home"),
                                 PAL["chip"], dp(52), size_hint=(None, 1),
-                                color=PAL["text"]))
+                                color=PAL["text"],
+                                size=(dp(52), dp(52))))
         top.add_widget(make_label("[b]Настройки[/b]", dp(22)))
         root.add_widget(top)
 
         c1 = Card(radius=dp(20), padding=dp(14), spacing=dp(10),
-                  size_hint=(1, None), height=dp(150))
+                  orientation="vertical", size_hint=(1, None), height=dp(120))
         c1.add_widget(make_label("[b]Тема оформления[/b]", dp(16)))
         self.btn_theme = make_btn("Тема: светлая", self.switch_theme,
                                   PAL["chip"], dp(46), color=PAL["text"],
@@ -503,7 +504,7 @@ class DiaryApp(App):
         root.add_widget(c1)
 
         c2 = Card(radius=dp(20), padding=dp(14), spacing=dp(10),
-                  size_hint=(1, None), height=dp(160))
+                  orientation="vertical", size_hint=(1, None), height=dp(170))
         c2.add_widget(make_label("[b]Блокировка приложения[/b]", dp(16)))
         self.pin_status = make_label("", dp(13), PAL["muted"])
         c2.add_widget(self.pin_status)
@@ -517,7 +518,7 @@ class DiaryApp(App):
         root.add_widget(c2)
 
         c3 = Card(radius=dp(20), padding=dp(14), spacing=dp(10),
-                  size_hint=(1, None), height=dp(150))
+                  orientation="vertical", size_hint=(1, None), height=dp(170))
         c3.add_widget(make_label("[b]Копия данных[/b]", dp(16)))
         c3.add_widget(make_label("Отправить всю историю одним текстом или "
                                  "восстановить из копии.", dp(13), PAL["muted"]))
@@ -549,7 +550,7 @@ class DiaryApp(App):
         root.add_widget(self.lbl_greet)
 
         card = Card(bg=PAL["soft"], radius=dp(24), padding=dp(18), spacing=dp(4),
-                    size_hint=(1, None), height=dp(112))
+                    orientation="vertical", size_hint=(1, None), height=dp(124))
         card.add_widget(make_label("Баланс", dp(13), PAL["muted"]))
         self.lbl_balance = make_label("", dp(30), PAL["text"])
         card.add_widget(self.lbl_balance)
@@ -587,7 +588,7 @@ class DiaryApp(App):
     def make_budget_card(self):
         holder = FloatLayout(size_hint=(1, None), height=dp(100))
         card = Card(bg=PAL["soft"], radius=dp(20), padding=dp(14),
-                    spacing=dp(4), size_hint=(1, 1),
+                    spacing=dp(4), orientation="vertical", size_hint=(1, 1),
                     pos_hint={"x": 0, "y": 0})
         self.budget_lbl_big = make_label("", dp(18))
         card.add_widget(self.budget_lbl_big)
@@ -649,6 +650,7 @@ class DiaryApp(App):
             col = PAL["accent"] if r["kind"] == "expense" else PAL["green"]
             cmt = f' · {r["comment"]}' if r.get("comment") else ""
             card = Card(radius=dp(16), padding=dp(12), spacing=dp(2),
+                        orientation="vertical",
                         size_hint=(1, None), height=dp(78))
             row = BoxLayout(size_hint=(1, None), height=dp(34), spacing=dp(4))
             row.add_widget(make_label(f"[b]{sign}{rub(r['amount'])}[/b]",
@@ -709,7 +711,8 @@ class DiaryApp(App):
         top = BoxLayout(size_hint=(1, None), height=dp(52), spacing=dp(10))
         top.add_widget(make_btn("←", lambda: self.go("home"),
                                 PAL["chip"], dp(52), size_hint=(None, 1),
-                                color=PAL["text"]))
+                                color=PAL["text"],
+                                size=(dp(52), dp(52))))
         self.add_title = make_label("[b]Новый расход[/b]", dp(22))
         top.add_widget(self.add_title)
         root.add_widget(top)
@@ -840,7 +843,8 @@ class DiaryApp(App):
         top = BoxLayout(size_hint=(1, None), height=dp(52), spacing=dp(10))
         top.add_widget(make_btn("←", lambda: self.go("home"),
                                 PAL["chip"], dp(52), size_hint=(None, 1),
-                                color=PAL["text"]))
+                                color=PAL["text"],
+                                size=(dp(52), dp(52))))
         top.add_widget(make_label("[b]Отчёты[/b]", dp(22)))
         root.add_widget(top)
 
@@ -868,7 +872,7 @@ class DiaryApp(App):
         inc, exp = self.totals(recs)
 
         head = Card(radius=dp(20), padding=dp(16), spacing=dp(6),
-                    size_hint=(1, None), height=dp(176))
+                    orientation="vertical", size_hint=(1, None), height=dp(176))
         head.add_widget(make_label(f"[b]{title}[/b]", dp(20)))
         for name, val, col in [("Доходы", inc, PAL["green"]),
                                ("Расходы", exp, PAL["accent"]),
@@ -891,6 +895,7 @@ class DiaryApp(App):
             mx = max(by_cat.values())
             for cat, s in sorted(by_cat.items(), key=lambda x: -x[1]):
                 card = Card(radius=dp(16), padding=dp(12), spacing=dp(6),
+                            orientation="vertical",
                             size_hint=(1, None), height=dp(76))
                 top = BoxLayout(size_hint=(1, None), height=dp(26))
                 top.add_widget(make_label(cat, dp(15), size_hint=(0.6, 1)))
@@ -909,7 +914,8 @@ class DiaryApp(App):
         top = BoxLayout(size_hint=(1, None), height=dp(52), spacing=dp(10))
         top.add_widget(make_btn("←", lambda: self.go("home"),
                                 PAL["chip"], dp(52), size_hint=(None, 1),
-                                color=PAL["text"]))
+                                color=PAL["text"],
+                                size=(dp(52), dp(52))))
         top.add_widget(make_label("[b]Цели[/b]", dp(22)))
         root.add_widget(top)
 
@@ -917,7 +923,8 @@ class DiaryApp(App):
         root.add_widget(self.goals_scroll)
 
         bottom = Card(radius=dp(20), padding=dp(14), spacing=dp(10),
-                      size_hint=(1, None), height=dp(214))
+                      orientation="vertical", size_hint=(1, None),
+                      height=dp(230))
         bottom.add_widget(make_label("Новая цель", dp(14), PAL["muted"]))
         self.goal_name = make_input(font_size=dp(17), multiline=False,
                                     size_hint=(1, None), height=dp(46),
@@ -949,6 +956,7 @@ class DiaryApp(App):
             pct = min(100, saved / g["target"] * 100) if g["target"] else 0
 
             card = Card(radius=dp(18), padding=dp(14), spacing=dp(10),
+                        orientation="vertical",
                         size_hint=(1, None), height=dp(196))
             head = BoxLayout(size_hint=(1, None), height=dp(38))
             head.add_widget(make_label(f"[b]{gname}[/b]", dp(20),
@@ -1028,12 +1036,14 @@ class DiaryApp(App):
         top = BoxLayout(size_hint=(1, None), height=dp(52), spacing=dp(10))
         top.add_widget(make_btn("←", lambda: self.go("home"),
                                 PAL["chip"], dp(52), size_hint=(None, 1),
-                                color=PAL["text"]))
+                                color=PAL["text"],
+                                size=(dp(52), dp(52))))
         top.add_widget(make_label("[b]Копия данных[/b]", dp(22)))
         root.add_widget(top)
 
         card1 = Card(radius=dp(20), padding=dp(14), spacing=dp(8),
-                     size_hint=(1, None), height=dp(150))
+                     orientation="vertical", size_hint=(1, None),
+                     height=dp(170))
         card1.add_widget(make_label("Сохранить копию", dp(15), PAL["muted"]))
         card1.add_widget(make_label(
             "Вся история — одним текстом. Отправьте его «в сохранённые сообщения» "
@@ -1044,7 +1054,8 @@ class DiaryApp(App):
         root.add_widget(card1)
 
         card2 = Card(radius=dp(20), padding=dp(14), spacing=dp(8),
-                     size_hint=(1, None), height=dp(220))
+                     orientation="vertical", size_hint=(1, None),
+                     height=dp(230))
         card2.add_widget(make_label("Восстановить из копии", dp(15), PAL["muted"]))
         self.backup_input = make_input(font_size=dp(13), multiline=True,
                                        size_hint=(1, None), height=dp(88),
