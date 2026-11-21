@@ -52,9 +52,9 @@ class Card(BoxLayout):
         self._bg.size = self.size
 
 
-def make_label(text, size=dp(16), color=C_TEXT, bold=False, halign="left"):
+def make_label(text, size=dp(16), color=C_TEXT, bold=False, halign="left", **kw):
     lbl = Label(text=text, font_size=size, color=color,
-                halign=halign, valign="middle", markup=True)
+                halign=halign, valign="middle", markup=True, **kw)
     lbl.bind(width=lambda inst, w: setattr(inst, "text_size", (w, None)))
     return lbl
 
