@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Дневник расходов — Android-приложение на Kivy.
-Сборка: buildozer android debug (см. buildozer.spec и .github/workflows/build.yml)
+Версия 6 (внешний ремонт): подсветка выбранного периода в отчётах, «+ Своя категория» широкой кнопкой под сеткой, единые отступы карточек настроек. Логика и данные не менялись (v5-fix).
 """
 import hashlib
 import json
@@ -494,7 +494,7 @@ class DiaryApp(App):
         top.add_widget(make_label("[b]Настройки[/b]", dp(22)))
         root.add_widget(top)
 
-        c1 = Card(radius=dp(20), padding=dp(14), spacing=dp(10),
+        c1 = Card(radius=dp(20), padding=dp(16), spacing=dp(10),
                   orientation="vertical", size_hint=(1, None), height=dp(120))
         c1.add_widget(make_label("[b]Тема оформления[/b]", dp(16)))
         self.btn_theme = make_btn("Тема: светлая", self.switch_theme,
@@ -503,7 +503,7 @@ class DiaryApp(App):
         c1.add_widget(self.btn_theme)
         root.add_widget(c1)
 
-        c2 = Card(radius=dp(20), padding=dp(14), spacing=dp(10),
+        c2 = Card(radius=dp(20), padding=dp(16), spacing=dp(10),
                   orientation="vertical", size_hint=(1, None), height=dp(170))
         c2.add_widget(make_label("[b]Блокировка приложения[/b]", dp(16)))
         self.pin_status = make_label("", dp(13), PAL["muted"])
@@ -517,7 +517,7 @@ class DiaryApp(App):
         c2.add_widget(prow)
         root.add_widget(c2)
 
-        c3 = Card(radius=dp(20), padding=dp(14), spacing=dp(10),
+        c3 = Card(radius=dp(20), padding=dp(16), spacing=dp(10),
                   orientation="vertical", size_hint=(1, None), height=dp(170))
         c3.add_widget(make_label("[b]Копия данных[/b]", dp(16)))
         c3.add_widget(make_label("Отправить всю историю одним текстом или "
@@ -734,6 +734,10 @@ class DiaryApp(App):
         self.cats_grid = GridLayout(cols=4, spacing=dp(8), size_hint=(1, None))
         self.cats_grid.bind(minimum_height=self.cats_grid.setter("height"))
         root.add_widget(self.cats_grid)
+        self.btn_own_cat = make_btn("+ Своя категория", self.add_cat_modal,
+                                    PAL["chip"], dp(44), color=PAL["muted"],
+                                    font_size=dp(14))
+        root.add_widget(self.btn_own_cat)
 
         self.comment_input = make_input(font_size=dp(17), multiline=False,
                                         size_hint=(1, None), height=dp(48),
@@ -770,11 +774,6 @@ class DiaryApp(App):
                            size_hint=(1, None), height=dp(44))
             b.bind(on_release=lambda inst, cat=c: self.pick_cat(cat))
             self.cats_grid.add_widget(b)
-        plus = SoftButton(text="+ Своя", font_size=dp(15), bg=PAL["chip"],
-                          radius=dp(22), color=PAL["muted"],
-                          size_hint=(1, None), height=dp(44))
-        plus.bind(on_release=lambda inst: self.add_cat_modal())
-        self.cats_grid.add_widget(plus)
 
     def add_cat_modal(self):
         view = ModalView(size_hint=(0.85, None), height=dp(170),
@@ -848,11 +847,15 @@ class DiaryApp(App):
         top.add_widget(make_label("[b]Отчёты[/b]", dp(22)))
         root.add_widget(top)
 
+        self.rep_days = 7
         row = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(8))
+        self.rep_btns = {}
         for t, d in [("Сегодня", 1), ("Неделя", 7), ("Месяц", 31), ("Всё", None)]:
-            row.add_widget(make_btn(t, lambda dd=d: self.show_report(dd),
-                                    PAL["chip"], dp(44), color=PAL["text"],
-                                    font_size=dp(14)))
+            b = make_btn(t, lambda dd=d: self.show_report(dd),
+                         PAL["chip"], dp(44), color=PAL["text"],
+                         font_size=dp(14))
+            self.rep_btns[d] = b
+            row.add_widget(b)
         root.add_widget(row)
 
         self.report_scroll, self.report_grid = scroll_column()
@@ -862,6 +865,16 @@ class DiaryApp(App):
         return scr
 
     def show_report(self, days):
+        self.rep_days = days
+        for d, b in getattr(self, "rep_btns", {}).items():
+            if d == days:
+                b._bg = PAL["chsel"]
+                b._col.rgba = PAL["chsel"]
+                b.color = (1, 1, 1, 1)
+            else:
+                b._bg = PAL["chip"]
+                b._col.rgba = PAL["chip"]
+                b.color = PAL["text"]
         recs = self.period_records(days)
         title = {1: "Сегодня", 7: "За неделю", 31: "За месяц",
                  None: "За всё время"}[days]
