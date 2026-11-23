@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 Дневник расходов — Android-приложение на Kivy.
+Версия: 1.1 (код v7). Версия видна внизу «Настройки».
+Версия: 1.1.1 (код v7-fix): экран ошибки с traceback при падении запуска,
+защитные обёртки on_start/стартовых вызовов. База — v7.
 Версия 7 (яндекс-стиль): жёлто-красная палитра, крестики в виде аккуратных кружков, системная кнопка «назад» ходит по экранам и сворачивает приложение вместо закрытия, непрозрачный экран пин-кода (суммы за ним не видны), напоминания о накоплениях и график откладывания для целей.
 """
 import hashlib
@@ -42,6 +45,8 @@ THEME_DARK = dict(bg="#1C1C1E", card="#2A2A2C",
                   track="#3A3A3E", field="#2E2E31")
 
 PAL = {k: get_color_from_hex(v) for k, v in THEME_LIGHT.items()}
+
+APP_VERSION = "1.1.1 (v7-fix)"
 
 CATS_EXPENSE = ["Еда", "Транспорт", "Дом", "Здоровье", "Связь", "Одежда", "Развлечения", "Прочее"]
 CATS_INCOME = ["Зарплата", "Подработка", "Подарок", "Прочее"]
@@ -330,9 +335,12 @@ class DiaryApp(App):
         self.rebuild_ui()
         if self.pin_hash:
             self.sm.current = "lock"
-        Window.bind(on_keyboard=self.on_keyboard)
-        Clock.schedule_interval(self._tick_reminders, 900)
-        self.check_reminders()
+        try:
+            Window.bind(on_keyboard=self.on_keyboard)
+            Clock.schedule_interval(self._tick_reminders, 900)
+            self.check_reminders()
+        except Exception:
+            pass
         return sm
 
     def rebuild_ui(self):
@@ -413,10 +421,13 @@ class DiaryApp(App):
 
     # ---------- ПИН-КОД И БЛОКИРОВКА ----------
     def on_start(self):
-        if self.pin_hash and self.sm.current != "lock":
-            self.show_lock()
-        if self.notify:
-            self._ask_notif_permission()
+        try:
+            if self.pin_hash and self.sm.current != "lock":
+                self.show_lock()
+            if self.notify:
+                self._ask_notif_permission()
+        except Exception:
+            pass
 
     def _ask_notif_permission(self):
         try:
@@ -716,6 +727,10 @@ class DiaryApp(App):
                                    font_size=dp(15))
         c4.add_widget(self.btn_notify)
         root.add_widget(c4)
+
+        root.add_widget(make_label(f"Дневник расходов · версия {APP_VERSION}",
+                                   dp(12), PAL["muted"], halign="center",
+                                   size_hint=(1, None), height=dp(28)))
 
         scr.add_widget(root)
         scr.bind(on_enter=lambda *a: self.refresh_settings())
@@ -1562,4 +1577,45 @@ class DiaryApp(App):
 
 
 if __name__ == "__main__":
-    DiaryApp().run()
+    import traceback as _tb
+    try:
+        DiaryApp().run()
+    except Exception:
+        _text = _tb.format_exc()
+        try:
+            import os as _os
+            with open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                                    "crash_log.txt"), "w", encoding="utf-8") as _f:
+                _f.write(_text)
+        except Exception:
+            pass
+        try:
+            from kivy.app import App as _ErrApp
+            from kivy.uix.label import Label as _ErrLabel
+            from kivy.uix.scrollview import ScrollView as _ErrScroll
+            from kivy.uix.boxlayout import BoxLayout as _ErrBox
+            from kivy.core.window import Window as _ErrWin
+
+            class _CrashWindow(_ErrApp):
+                def build(self):
+                    self.title = "Ошибка запуска"
+                    _ErrWin.clearcolor = (0.17, 0.15, 0.13, 1)
+                    root = _ErrBox(orientation="vertical", padding=12, spacing=8)
+                    head = _ErrLabel(
+                        text="Ошибка запуска. Пришлите скриншот этого текста Алисе.",
+                        color=(1, 0.93, 0.7, 1), font_size="16sp",
+                        size_hint=(1, None), height=48, halign="center")
+                    head.bind(size=lambda w, s: setattr(w, "text_size", s))
+                    root.add_widget(head)
+                    sv = _ErrScroll()
+                    body = _ErrLabel(text=_text, color=(1, 1, 1, 1), font_size="13sp",
+                                     size_hint=(1, None), halign="left")
+                    body.bind(width=lambda w, s: setattr(w, "text_size", (w.width, None)))
+                    body.bind(texture_size=lambda w, s: setattr(w, "height", s[1]))
+                    sv.add_widget(body)
+                    root.add_widget(sv)
+                    return root
+
+            _CrashWindow().run()
+        except Exception:
+            pass
