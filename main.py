@@ -1567,3 +1567,50 @@ class DiaryApp(App):
                        "income": custom.get("income", [])}
         self.save()
         self.refresh_home()
+        self.backup_msg.text = (f"Восстановлено! Записей: {len(records)}, "
+                                f"целей: {len(goals)}.")
+
+
+if __name__ == "__main__":
+    import traceback as _tb
+    try:
+        DiaryApp().run()
+    except Exception:
+        _text = _tb.format_exc()
+        try:
+            import os as _os
+            with open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                                    "crash_log.txt"), "w", encoding="utf-8") as _f:
+                _f.write(_text)
+        except Exception:
+            pass
+        try:
+            from kivy.app import App as _ErrApp
+            from kivy.uix.label import Label as _ErrLabel
+            from kivy.uix.scrollview import ScrollView as _ErrScroll
+            from kivy.uix.boxlayout import BoxLayout as _ErrBox
+            from kivy.core.window import Window as _ErrWin
+
+            class _CrashWindow(_ErrApp):
+                def build(self):
+                    self.title = "Ошибка запуска"
+                    _ErrWin.clearcolor = (0.17, 0.15, 0.13, 1)
+                    root = _ErrBox(orientation="vertical", padding=12, spacing=8)
+                    head = _ErrLabel(
+                        text="Ошибка запуска. Пришлите скриншот этого текста Алисе.",
+                        color=(1, 0.93, 0.7, 1), font_size="16sp",
+                        size_hint=(1, None), height=48, halign="center")
+                    head.bind(size=lambda w, s: setattr(w, "text_size", s))
+                    root.add_widget(head)
+                    sv = _ErrScroll()
+                    body = _ErrLabel(text=_text, color=(1, 1, 1, 1), font_size="13sp",
+                                     size_hint=(1, None), halign="left")
+                    body.bind(width=lambda w, s: setattr(w, "text_size", (w.width, None)))
+                    body.bind(texture_size=lambda w, s: setattr(w, "height", s[1]))
+                    sv.add_widget(body)
+                    root.add_widget(sv)
+                    return root
+
+            _CrashWindow().run()
+        except Exception:
+            pass
