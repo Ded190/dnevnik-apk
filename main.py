@@ -677,9 +677,15 @@ class DiaryApp(App):
         top.add_widget(make_label("[b]Настройки[/b]", dp(22)))
         root.add_widget(top)
 
+        
+        
         scroll, col = scroll_column()
         root.add_widget(scroll)
+        outer = root
         root = col
+
+        
+        
 
         c1 = Card(radius=dp(20), padding=dp(16), spacing=dp(10),
                   orientation="vertical", size_hint=(1, None), height=dp(120))
@@ -730,7 +736,8 @@ class DiaryApp(App):
                                    dp(12), PAL["muted"], halign="center",
                                    size_hint=(1, None), height=dp(28)))
 
-        scr.add_widget(root)
+        
+        scr.add_widget(outer)
         scr.bind(on_enter=lambda *a: self.refresh_settings())
         return scr
 
