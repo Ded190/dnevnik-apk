@@ -16,15 +16,7 @@ jobs:
 
       - name: Auto-bump version
         run: |
-          VER=$(grep -m1 '^version *=' buildozer.spec | sed 's/.*= *//' | tr -d ' \r')
-          MA=$(echo "$VER" | cut -d. -f1)
-          MI=$(echo "$VER" | cut -d. -f2)
-          PA=$(echo "$VER" | cut -d. -f3)
-          PA=${PA:-0}
-          PA=$((PA+1))
-          NEW="$MA.$MI.$PA"
-          sed -i "s/^version *=.*/version = $NEW/" buildozer.spec
-          sed -i -E "s/APP_VERSION = \"[0-9.]+ $([^\"]*)$\"/APP_VERSION = \"$NEW (\1)\"/" main.py
+          NEW=$(python3 scripts/bump_version.py | grep new_version= | cut -d= -f2)
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add buildozer.spec main.py
