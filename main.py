@@ -823,3 +823,135 @@ def fmt_when(r):
                      height=dp(170))
         card1.add_widget(make_label("Сохранить копию", dp(15), PAL["muted"]))
         card1
+        card1.add_widget(make_label("Сохранить копию", dp(15), PAL["muted"]))
+        card1.add_widget(make_label(
+            "Вся история — одним текстом. Отправьте его «в сохранённые сообщения» "
+            "или в заметки — так копия не потеряется.",
+            dp(13), PAL["muted"]))
+        card1.add_widget(make_btn("Отправить копию", self.send_backup,
+                                  PAL["green"], dp(46)))
+        root.add_widget(card1)
+
+        card2 = Card(radius=dp(20), padding=dp(14), spacing=dp(8),
+                     orientation="vertical", size_hint=(1, None),
+                     height=dp(230))
+        card2.add_widget(make_label("Восстановить из копии", dp(15), PAL["muted"]))
+        self.backup_input = make_input(font_size=dp(13), multiline=True,
+                                       size_hint=(1, None), height=dp(88),
+                                       hint_text="Вставьте текст копии сюда")
+        card2.add_widget(self.backup_input)
+        card2.add_widget(make_btn("Восстановить", self.restore_backup,
+                                  PAL["accent"], dp(46)))
+        self.backup_msg = make_label("", dp(14), PAL["accent"])
+        card2.add_widget(self.backup_msg)
+        root.add_widget(card2)
+
+        scr.add_widget(root)
+        return scr
+
+    def send_backup(self):
+        text = json.dumps({"records": self.records, "goals": self.goals,
+                           "theme": self.theme, "budget": self.budget,
+                           "custom_cats": self.custom},
+                          ensure_ascii=False, indent=2)
+        ok = False
+        try:
+            from jnius import autoclass
+            Intent = autoclass("android.content.Intent")
+            JString = autoclass("java.lang.String")
+            Activity = autoclass("org.kivy.android.PythonActivity")
+            i = Intent()
+            i.setAction(Intent.ACTION_SEND)
+            i.setType("text/plain")
+            i.putExtra(Intent.EXTRA_TEXT, JString(text))
+            chooser = Intent.createChooser(i, JString("Копия дневника"))
+            Activity.mActivity.startActivity(chooser)
+            ok = True
+        except Exception:
+            pass
+        if ok:
+            self.backup_msg.text = ("Открыл выбор приложений — сохраните копию "
+                                    "в «Файлы», «Диск» или себе в мессенджер.")
+        else:
+            try:
+                path = (self.data_file() +
+                        datetime.now().strftime(".backup-%Y%m%d-%H%M%S"))
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+                self.backup_msg.text = "Копия сохранена: " + path
+            except Exception:
+                self.backup_msg.text = "Не получилось сохранить копию."
+
+    def restore_backup(self):
+        raw = self.backup_input.text.strip()
+        if not raw:
+            self.backup_msg.text = "Вставьте текст копии."
+            return
+        try:
+            d = json.loads(raw)
+            records = d.get("records", [])
+            goals = d.get("goals", {})
+            if not isinstance(records, list) or not isinstance(goals, dict):
+                raise ValueError
+            for r in records:
+                if not isinstance(r, dict) or "amount" not in r or "date" not in r:
+                    raise ValueError
+        except Exception:
+            self.backup_msg.text = "Не похоже на копию дневника. Проверьте текст."
+            return
+        self.records = records
+        self.goals = goals
+        if "budget" in d:
+            self.budget = d["budget"]
+        custom = d.get("custom_cats") or {}
+        self.custom = {"expense": custom.get("expense", []),
+                       "income": custom.get("income", [])}
+        self.save()
+        self.refresh_home()
+        self.backup_msg.text = (f"Восстановлено! Записей: {len(records)}, "
+                                f"целей: {len(goals)}.")
+
+
+if __name__ == "__main__":
+    import traceback as _tb
+    try:
+        DiaryApp().run()
+    except Exception:
+        _text = _tb.format_exc()
+        try:
+            import os as _os
+            with open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                                    "crash_log.txt"), "w", encoding="utf-8") as _f:
+                _f.write(_text)
+        except Exception:
+            pass
+        try:
+            from kivy.app import App as _ErrApp
+            from kivy.uix.label import Label as _ErrLabel
+            from kivy.uix.scrollview import ScrollView as _ErrScroll
+            from kivy.uix.boxlayout import BoxLayout as _ErrBox
+            from kivy.core.window import Window as _ErrWin
+
+            class _CrashWindow(_ErrApp):
+                def build(self):
+                    self.title = "Ошибка запуска"
+                    _ErrWin.clearcolor = (0.17, 0.15, 0.13, 1)
+                    root = _ErrBox(orientation="vertical", padding=12, spacing=8)
+                    head = _ErrLabel(
+                        text="Ошибка запуска. Пришлите скриншот этого текста Алисе.",
+                        color=(1, 0.93, 0.7, 1), font_size="16sp",
+                        size_hint=(1, None), height=48, halign="center")
+                    head.bind(size=lambda w, s: setattr(w, "text_size", s))
+                    root.add_widget(head)
+                    sv = _ErrScroll()
+                    body = _ErrLabel(text=_text, color=(1, 1, 1, 1), font_size="13sp",
+                                     size_hint=(1, None), halign="left")
+                    body.bind(width=lambda w, s: setattr(w, "text_size", (w.width, None)))
+                    body.bind(texture_size=lambda w, s: setattr(w, "height", s[1]))
+                    sv.add_widget(body)
+                    root.add_widget(sv)
+                    return root
+
+            _CrashWindow().run()
+        except Exception:
+            pass
